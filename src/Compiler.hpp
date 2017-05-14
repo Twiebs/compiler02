@@ -5,10 +5,10 @@ struct SourceFile {
 
 struct Compiler {
   std::vector<SourceFile> sourceFiles;
-  std::vector<uint32_t> filesToParse;
   PersistantBlockAllocator stringAllocator;
   PersistantBlockAllocator astAllocator;
 
+  Block *globalBlock;
   TypeDeclaration *typeDeclU8;
   TypeDeclaration *typeDeclU16;
   TypeDeclaration *typeDeclU32;
@@ -24,3 +24,4 @@ struct Compiler {
 };
 
 void InitalizeCompiler(Compiler *compiler);
+uint32_t AddFileToSourceFileList(Compiler *compiler, const char *filepath, size_t length);

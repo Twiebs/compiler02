@@ -204,6 +204,37 @@ void LexNumericLiteral(Lexer *lex, Token *token) {
   }
 }
 
+void LexChar(Lexer *lex, Token *token, size_t writeIndex) {
+  if (*lex->current == '\\') {
+    AppendCurrent(token, lex);
+    if (*lex->current == 'n') {
+      token->text[writeIndex] = '\n';
+    }
+    token->length -= 1;
+  } else {
+    AppendCurrent(token, lex);
+  }
+}
+
+//This is dirty AF.  We don't want to allocate
+//memory or bother doing a copy so we just replace
+//the escaped characters in the buffer as we go
+void LexStringLiteral(Lexer *lex, Token *token) {
+  assert(*lex->current == '"');
+  EatCurrent(lex); //Eat "
+  token->type = TokenType_String;
+  token->text = lex->current;
+  size_t writeIndex = 0;
+  while (*lex->current != '"' && *lex->current != 0) {
+    LexChar(lex, token, writeIndex);
+    writeIndex += 1;
+  }
+
+  if (*lex->current == '"') {
+    EatCurrent(lex); //Eat "
+  }
+}
+
 //A realitivly ineffiecant procedure to tokenize the current
 //position of the lexer within the buffer.  Does a signfigant
 //ineffeicant amount of string comparing for simplicity during
@@ -297,6 +328,7 @@ Token GetToken(Lexer *lex) {
     if (SetTokenTypeIfMatch(TokenType_KeywordReturn, LiteralAndLength("RETURN"))) return token;
     if (SetTokenTypeIfMatch(TokenType_KeywordForeign, LiteralAndLength("FOREIGN"))) return token;
     if (SetTokenTypeIfMatch(TokenType_KeywordCast, LiteralAndLength("CAST"))) return token;
+    if (SetTokenTypeIfMatch(TokenType_KeywordImport, LiteralAndLength("IMPORT"))) return token;
     token.type = TokenType_Identifier;
     return token;
   }
@@ -312,13 +344,19 @@ Token GetToken(Lexer *lex) {
   //TODO Proper string escaping handling and
   //character inserting
   else if (*lex->current == '"') {
-    token.type = TokenType_String;
+    LexStringLiteral(lex, &token);
+  }
+
+  else if (*lex->current == '\'') {
     EatCurrent(lex);
+    token.type = TokenType_Char;
     token.text = lex->current;
-    while (*lex->current != '"') {
-      AppendCurrent(&token, lex);
+    LexChar(lex, &token, 0);
+    if (*lex->current != '\'') {
+      assert(false);
     }
     EatCurrent(lex);
+    token.unsignedValue = *token.text;
   }
 
   //Comments
@@ -368,17 +406,18 @@ Token GetToken(Lexer *lex) {
   else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolDiv, LiteralAndLength("/"))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolMod, LiteralAndLength("%"))) return token;
 
-  else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolColon, LiteralAndLength(":"))) return token;
-  else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolEquals, LiteralAndLength("="))) return token;
-  else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolDot, LiteralAndLength("."))) return token;
-
-  else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalEqual, LiteralAndLength("=="))) return token;
+    else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalEqual, LiteralAndLength("=="))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalNotEqual, LiteralAndLength("!="))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalAnd, LiteralAndLength("&&"))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalOr, LiteralAndLength("||"))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalLessOrEqual, LiteralAndLength("<="))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalGreaterOrEqual, LiteralAndLength(">="))) return token;
-  
+
+  else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolColon, LiteralAndLength(":"))) return token;
+  else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolEquals, LiteralAndLength("="))) return token;
+  else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolDot, LiteralAndLength("."))) return token;
+  else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolComma, LiteralAndLength(","))) return token;
+
   else if (SetTokenTypeIfMatchAndAppend(TokenType_BitwiseLeftShift, LiteralAndLength("<<"))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_BitwiseRightShift, LiteralAndLength(">>"))) return token;
 

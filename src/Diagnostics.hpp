@@ -20,19 +20,21 @@ void ReportWarning(Parser *p, const SourceLocation& location, const char *fmt, .
 void LogInfo(Parser *p, const char *fmt, ...);
 void LogVerbose(Parser *p, const char *fmt, ...);
 
+
 //Debug procedures to pretty print AST represntation of
 //parsed data structures to verifiy parsing is correct
 void PrintStatement(Statement *statement, int blockDepth);
 void PrintBlock(Block *block, int blockDepth = 0);
 void PrintTypeDeclaration(TypeDeclaration *typeDecl, int blockDepth = 0);
 void PrintProcedureDeclaration(ProcedureDeclaration *procDecl, int blockDepth = 0);
-void PrintWhileStatement(WhileStatement *ws, int blockDepth = 0);
-void PrintIfStatement(IfStatement *is, int blockDepth = 0);
+void PrintVariableDeclaration(VariableDeclaration *varDecl);
+void PrintParameterDeclaration(ParameterDeclaration *params);
 
-void PrintVariableDeclaration(VariableDeclaration *varDecl, int blockDepth = 0);
 void PrintVariableAssignment(VariableAssignment *varAssignment, int blockDepth = 0);
 void PrintCallStatement(CallStatement *callStatement);
 void PrintReturnStatement(ReturnStatement *returnStatement, int blockDepth = 0);
+void PrintWhileStatement(WhileStatement *ws, int blockDepth = 0);
+void PrintIfStatement(IfStatement *is, int blockDepth = 0);
 
 void PrintExpression(Expression *expression);
 void PrintIntegerLiteral(IntegerLiteral *intLiteral);

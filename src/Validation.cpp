@@ -31,6 +31,7 @@ bool ValidateExpression(Compiler *c, Expression *expr) {
     case ExpressionType_UnaryOperation: return ValidateUnaryOperation(c, (UnaryOperation *)expr);
     case ExpressionType_BinaryOperation: return ValidateBinaryOperation(c, (BinaryOperation *)expr);
     case ExpressionType_CastExpression: return ValidateCastExpression(c, (CastExpression *)expr);
+    case ExpressionType_CallExpression: return ValidateCallExpression(c, (CallExpression *)expr);
 
     case ExpressionType_MemberAccessExpression:
     case ExpressionType_VariableExpression:
@@ -44,6 +45,10 @@ bool ValidateExpression(Compiler *c, Expression *expr) {
 
   assert(false);
   return false;
+}
+
+bool ValidateCallExpression(Compiler *c, CallExpression *call) {
+  return ValidateParameterInvokation(c, &call->params); 
 }
 
 bool ValidateIfStatement(Compiler *c, IfStatement *is) {
@@ -72,13 +77,41 @@ bool ValidateReturnStatement(Compiler *compiler, ReturnStatement *returnStatemen
   return ValidateExpression(compiler, returnStatement->returnValue);
 }
 
-bool ValidateCallStatement(Compiler *compiler, CallStatement *call) {
-  Expression *current = call->firstArgument;
-  while (current != nullptr) {
-    if (ValidateExpression(compiler, current)) return false;
-    current = current->next;
+bool ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params) {
+  if (params->parameterExpressionCount != params->parameterList->parameterCount) {
+    ReportError(compiler, "parameter count does not match");
+    return false;
   }
+  
+  {
+    Expression *current = params->firstParameterExpression;
+    while (current != nullptr) {
+      if (ValidateExpression(compiler, current) == false) return false;
+      current = current->next;
+    }
+  }
+
+  {
+    ParameterDeclaration *paramDecl = params->parameterList;
+    VariableDeclaration *currentVar = paramDecl->firstParameter;
+    Expression *current = params->firstParameterExpression;
+    while (current != nullptr) {
+      assert(currentVar != nullptr);
+      if (AttemptTypeCoercionIfRequired(compiler, &currentVar->typeInfo, current) == false) {
+        ReportError(compiler, current->location, "Parameter type mismatch");
+        return false;
+      } 
+      current = current->next;
+      currentVar = (VariableDeclaration *)currentVar->next;
+
+    }
+  }
+
   return true;
+}
+
+bool ValidateCallStatement(Compiler *compiler, CallStatement *call) {
+  return ValidateParameterInvokation(compiler, &call->params);
 }
 
 //0: not a liteal
@@ -154,8 +187,18 @@ bool ValidateCastExpression(Compiler *compiler, CastExpression *cast) {
 }
 
 bool ValidateVariableAssignment(Compiler *compiler, VariableAssignment *varAssign) {
+  if (varAssign->subscriptExpression != nullptr) {
+    if (varAssign->typeInfo.indirectionLevel == 0) {
+      ReportError(compiler, varAssign->location, "Cannot dereference a non pointer type");
+      return false;
+    }
+
+    if (ValidateExpression(compiler, varAssign->subscriptExpression) == false) return false;
+    varAssign->typeInfo.indirectionLevel -= 1;
+  }
+
   if (ValidateExpression(compiler, varAssign->expression) == false) return false;
-  if (Equals(&varAssign->typeInfo, &varAssign->expression->typeInfo) == false) {
+  if (AttemptTypeCoercionIfRequired(compiler, &varAssign->typeInfo, varAssign->expression) == false) {
     Identifier *varIdent = varAssign->varDecl->identifier;
     Identifier *typeIdent = varAssign->expression->typeInfo.type->identifier;
     ReportError(compiler, varAssign->location, "Cannot assign Variable(%s) to Expression(%s)",
@@ -166,6 +209,7 @@ bool ValidateVariableAssignment(Compiler *compiler, VariableAssignment *varAssig
 }
 
 bool AttemptTypeCoercionIfRequired(Compiler *compiler, TypeInfo *requestedType, Expression *expr) {
+  assert(expr->typeInfo.type != nullptr);
   if (Equals(requestedType, &expr->typeInfo)) return true;
 
   if (expr->expressionType == ExpressionType_UnaryOperation) {
@@ -223,8 +267,7 @@ bool ValidateVariableDeclaration(Compiler *compiler, VariableDeclaration *varDec
 }
 
 bool ValidateProcedureDeclaration(Compiler *compiler, ProcedureDeclaration *procDecl) {
-  ValidateBlock(compiler, procDecl);
-  return true;
+  return ValidateBlock(compiler, procDecl);
 }
 
 bool ValidateBlock(Compiler *compiler, Block *block) {
@@ -250,6 +293,7 @@ bool ValidateUnaryOperation(Compiler *compiler, UnaryOperation *unaryOp) {
       return false;
     }
 
+    unaryOp->typeInfo.indirectionLevel -= 1;
     return true;
   }
 
@@ -265,9 +309,10 @@ bool ValidateUnaryOperation(Compiler *compiler, UnaryOperation *unaryOp) {
   if (unaryOp->unaryToken == TokenType_SymbolValue) {
     TypeInfo *exprType = &unaryOp->expression->typeInfo;
     if (exprType->indirectionLevel == 0 && exprType->arraySize == 0) {
-      ReportError(compiler, unaryOp->location, "Cannot derefrence non ptr type");
+      ReportError(compiler, unaryOp->location, "Cannot derefrence non pointer or array type");
       return false;
     }
+    unaryOp->typeInfo.indirectionLevel -= unaryOp->unaryCount;
   }
 
   if (unaryOp->unaryToken == TokenType_LogicalNot ||

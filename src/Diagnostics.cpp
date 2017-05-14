@@ -69,7 +69,7 @@ void PrintStatement(Statement *statement, int blockDepth) {
   PrintBlockSpaces(blockDepth);
   switch (statement->statementType) {
     case StatementType_Block: PrintBlock((Block *)statement, blockDepth); break;
-    case StatementType_VariableDeclaration: PrintVariableDeclaration((VariableDeclaration *)statement, blockDepth); break;
+    case StatementType_VariableDeclaration: PrintVariableDeclaration((VariableDeclaration *)statement); break;
     case StatementType_TypeDeclaration: PrintTypeDeclaration((TypeDeclaration *)statement, blockDepth); break;
     case StatementType_ProcedureDeclaration: PrintProcedureDeclaration((ProcedureDeclaration *)statement, blockDepth); break;
     case StatementType_VariableAssignment: PrintVariableAssignment((VariableAssignment *)statement, blockDepth); break;
@@ -117,8 +117,15 @@ void PrintIfStatement(IfStatement *is, int blockDepth) {
 }
 
 void PrintUnaryOperation(UnaryOperation *unaryOp) {
-  for (size_t i = 0; i < unaryOp->unaryCount; i++)
-    printf("%s", TokenString[unaryOp->unaryToken]);
+  if (unaryOp->unaryToken == TokenType_ArrayOpen) {
+    printf("[");
+    PrintExpression(unaryOp->subscriptExpression);
+    printf("]");
+  } else {
+    for (size_t i = 0; i < unaryOp->unaryCount; i++)
+      printf("%s", TokenString[unaryOp->unaryToken]);
+  }
+
   PrintExpression(unaryOp->expression);
 }
 
@@ -150,7 +157,7 @@ void PrintBlock(Block *block, int blockDepth) {
   }
 }
 
-void PrintVariableDeclaration(VariableDeclaration *varDecl, int blockDepth) {
+void PrintVariableDeclaration(VariableDeclaration *varDecl) {
   Identifier *varIdent = varDecl->identifier;
   Identifier *typeIdent = varDecl->typeInfo.type->identifier;
   printf("%.*s: ", (int)varIdent->name.length, varIdent->name.string);
@@ -180,17 +187,32 @@ void PrintTypeDeclaration(TypeDeclaration *typeDecl, int blockDepth) {
   printf("\n");
 }
 
+void PrintParameterDeclaration(ParameterDeclaration *params) {
+  printf("(");
+  VariableDeclaration *current = params->firstParameter;
+  while (current != nullptr) {
+    PrintVariableDeclaration(current);
+    current = (VariableDeclaration *)current->next;
+    if (current != nullptr) printf(", ");
+  }
+  printf(")\n");
+}
+
+void PrintParameterInvokation(ParameterInvokation *params) {
+  printf("(");
+  Expression *current = params->firstParameterExpression;
+  while (current != nullptr) {
+    PrintExpression(current);
+    current = current->next;
+    if (current != nullptr) printf(", ");
+  }
+  printf(")\n");
+}
+
 void PrintProcedureDeclaration(ProcedureDeclaration *procDecl, int blockDepth) {
   Identifier *ident = procDecl->identifier;
-  printf("%.*s :: (", (int)ident->name.length, ident->name.string);
-  VariableDeclaration *currentArgument = procDecl->firstArgument;
-  while (currentArgument != nullptr) {
-    PrintVariableDeclaration(currentArgument, blockDepth);
-    currentArgument = (VariableDeclaration *)currentArgument->next;
-    if (currentArgument != nullptr) printf(", ");
-  }
-
-  printf(")\n");
+  printf("%.*s :: ", (int)ident->name.length, ident->name.string);
+  PrintParameterDeclaration(&procDecl->params);
   Statement *currentStatement = procDecl->firstStatement;
   while (currentStatement != nullptr) {
     PrintStatement(currentStatement, blockDepth + 1);
@@ -220,14 +242,8 @@ void PrintVariableAssignment(VariableAssignment *varAssignment, int blockDepth) 
 
 void PrintCallStatement(CallStatement *callStatement) {
   Identifier *procIdent = callStatement->procedure->identifier;
-  printf("%s(", procIdent->name.string);
-  Expression *currentArgument = callStatement->firstArgument;
-  while (currentArgument != nullptr) {
-    PrintExpression(currentArgument);
-    printf(" ");
-    currentArgument = currentArgument->next;
-  }
-  printf(")");
+  printf("%s", procIdent->name.string);
+  PrintParameterInvokation(&callStatement->params);
 }
 
 void PrintReturnStatement(ReturnStatement *returnStatement, int blockDepth) {
@@ -259,15 +275,9 @@ void PrintCastExpression(CastExpression *castExpr) {
 }
 
 void PrintCallExpression(CallExpression *callExpr) {
-  Identifier *procIdent = callExpr->procDecl->identifier;
-  printf("%.*s(", (int)procIdent->name.length, procIdent->name.string);
-  Expression *currentArgument = callExpr->firstArgument;
-  while (currentArgument != nullptr) {
-    PrintExpression(currentArgument);
-    currentArgument = currentArgument->next;
-    if (currentArgument != nullptr) printf(", ");
-  }
-  printf(")");
+  Identifier *procIdent = callExpr->procedure->identifier;
+  printf("%s", procIdent->name.string);
+  PrintParameterInvokation(&callExpr->params);
 }
 
 void PrintMemberAccessExpression(MemberAccessExpression *expr) {

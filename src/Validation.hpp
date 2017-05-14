@@ -15,7 +15,7 @@ bool ValidateExpression(Compiler *compiler, Expression *expr);
 bool ValidateUnaryOperation(Compiler *compiler, UnaryOperation *unaryOp);
 bool ValidateBinaryOperation(Compiler *compiler, BinaryOperation *binOp);
 bool ValidateCastExpression(Compiler *compiler, CastExpression *cast);
+bool ValidateCallExpression(Compiler *c, CallExpression *call);
 
-
-
+bool ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params);
 bool AttemptTypeCoercionIfRequired(Compiler *compiler, TypeInfo *requestedType, Expression *expr);

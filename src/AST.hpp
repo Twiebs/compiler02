@@ -139,12 +139,20 @@ struct VariableDeclaration : Statement {
   llvm::Value *llvmAlloca;
 };
 
+struct ParameterDeclaration {
+  VariableDeclaration *firstParameter;
+  int parameterCount;
+};
+
+struct ParameterInvokation {
+  ParameterDeclaration *parameterList;
+  Expression *firstParameterExpression;
+  int parameterExpressionCount;
+};
+
 struct ProcedureDeclaration : Block {
   Identifier *identifier;
-
-  VariableDeclaration *firstArgument;
-  uint32_t argumentCount;
-
+  ParameterDeclaration params;
   TypeInfo returnTypeInfo;
   bool isForeign;
 
@@ -153,16 +161,16 @@ struct ProcedureDeclaration : Block {
 
 struct VariableAssignment : Statement {
   VariableDeclaration *varDecl;
-  int variableDepth;
   Expression *expression;
+  Expression *subscriptExpression;
   TypeMemberAccess memberAccess;
   TypeInfo typeInfo;
 };
 
+
 struct CallStatement : Statement {
   ProcedureDeclaration *procedure;
-  Expression *firstArgument;
-  int argumentCount;
+  ParameterInvokation params;
 };
 
 struct ReturnStatement : Statement {
@@ -209,15 +217,10 @@ struct CastExpression : Expression {
   Expression *expression;
 };
 
-//TODO Consider consolodating call statement and expression
-//into a additional data structure called CallInfo and make
-//it a member of both structs
 struct CallExpression : Expression {
-  ProcedureDeclaration *procDecl;
-  Expression *firstArgument;
-  int argumentCount;
+  ProcedureDeclaration *procedure;
+  ParameterInvokation params;
 };
-
 
 bool IsUnsignedIntegerType(TypeDeclaration *type, Compiler *compiler);
 bool IsSignedIntegerType(TypeDeclaration *type, Compiler *compiler);

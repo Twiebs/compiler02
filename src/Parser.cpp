@@ -64,8 +64,10 @@ Block *ParseCurrentBlock(Parser *p) {
     Statement *statement = ParseStatement(p);
     if (statement == nullptr) return nullptr;
     if (p->currentBlock->firstStatement == nullptr) {
-        p->currentBlock->firstStatement = statement;
-        currentStatement = statement;
+      p->currentBlock->firstStatement = statement;
+    }
+    if (currentStatement == nullptr) {
+      currentStatement = statement;
     } else {
       currentStatement->next = statement;
       currentStatement = currentStatement->next;;
@@ -142,37 +144,42 @@ bool ParseTypeMemberAccess(Parser *p, VariableDeclaration *varDecl, TypeMemberAc
   return true;
 }
 
-//Returns head of the argument linked list
-Expression *ParseCallArguments(Parser *p, ProcedureDeclaration *procDecl, int *argCount) {
-  assert(argCount != nullptr);
+bool ParseParameterInvokation(Parser *p, ParameterInvokation *params) {
   assert(p->token.type == TokenType_ParenOpen);
-  assert(procDecl->statementType == StatementType_ProcedureDeclaration);
-  NextToken(p); //Eat the TokenType_ParenOpen              
-  Expression *firstArgument = nullptr;
-  Expression *currentArgument = nullptr;
-  int currentArgCount = 0;
+  NextToken(p); //Eat TokenType_ParenOpen
+
+  Expression *currentExpr = nullptr;
   while (p->token.type != TokenType_ParenClose && p->token.type != TokenType_EndOfBuffer) {
     Expression *expr = ParseExpression(p);
-    if (expr == nullptr) return nullptr;
-    if (firstArgument == nullptr) {
-      firstArgument = expr;
-      currentArgument = expr;
+    if (expr == nullptr) return false;
+    if (params->firstParameterExpression == nullptr) {
+      params->firstParameterExpression  = expr;
+      currentExpr = expr;
     } else {
-      currentArgument->next = expr;
-      currentArgument = currentArgument->next;
+      currentExpr->next = expr;
+      currentExpr = currentExpr->next;
     }        
-    currentArgCount++;
+    params->parameterExpressionCount++;
+    if (p->token.type != TokenType_SymbolComma && p->token.type != TokenType_ParenClose && p->token.type != TokenType_EndOfBuffer) {
+      ReportError(p, p->token.location, "Expected comma in parameter invokation");
+      return false;
+    }
+
+    if (p->token.type == TokenType_SymbolComma) {
+      NextToken(p);
+    }
   }
 
   if (p->token.type == TokenType_EndOfBuffer) {
-    ReportError(p, p->token.location, "Unexpected EndOfBuffer when parsing call arguments");
-    return nullptr;
+    ReportError(p, "Reached End of buffer while parsing params invokation");
+    return false;
   }
 
-  *argCount = currentArgCount;
-  return firstArgument;
-}
 
+  assert(p->token.type == TokenType_ParenClose);
+  NextToken(p); //Eat TokenType_ParenClose
+  return true;
+}
 
 CastExpression *ParseCastExpression(Parser *p) {
   assert(p->token.type == TokenType_KeywordCast);
@@ -248,14 +255,14 @@ Expression *ParsePrimaryExpression(Parser *p) {
         //This is a call expression
         if (ident->declaration->statementType == StatementType_ProcedureDeclaration) {
           ProcedureDeclaration *procDecl = (ProcedureDeclaration *)ident->declaration;
-          int argumentCount = 0;
-          Expression *firstArgument = ParseCallArguments(p, procDecl, &argumentCount);
           CallExpression *callExpr = CreateExpression(CallExpression, p->token.location, p);
-          callExpr->firstArgument = firstArgument;
-          callExpr->argumentCount = argumentCount;
-          callExpr->procDecl = procDecl;
-          assert(p->token.type == TokenType_ParenClose);
-          NextToken(p); //Eat TokenType_ParenClose
+          callExpr->params.parameterList = &procDecl->params;
+          callExpr->procedure = procDecl;
+          callExpr->typeInfo = procDecl->returnTypeInfo;
+          if (ParseParameterInvokation(p, &callExpr->params) == false) {
+            return nullptr;
+          }
+
           return callExpr;
         }
 
@@ -326,6 +333,14 @@ Expression *ParsePrimaryExpression(Parser *p) {
       expr->typeInfo.type = p->compiler->typeDeclU8;
       expr->typeInfo.indirectionLevel = 1;
       NextToken(p); //Eat string literal
+      return expr;
+    } break;
+
+    case TokenType_Char: {
+      IntegerLiteral *expr = CreateExpression(IntegerLiteral, p->token.location, p);
+      expr->unsignedValue = p->token.unsignedValue;
+      expr->typeInfo.type = p->compiler->typeDeclU8;
+      NextToken(p);
       return expr;
     } break;
 
@@ -485,9 +500,49 @@ bool ParseTypeInfo(Parser *p, TypeInfo *typeInfo) {
   return true;
 }
 
+bool ParseParameterDeclaration(Parser *p, ParameterDeclaration *params) {
+  assert(p->token.type == TokenType_ParenOpen);
+  NextToken(p); //Eat TokenType_ParenOpen
+  VariableDeclaration *currentDecl = nullptr;
+  while (p->token.type != TokenType_ParenClose && p->token.type != TokenType_EndOfBuffer) {
+    Statement *s = ParseStatement(p);
+    if (s->statementType != StatementType_VariableDeclaration) {
+      ReportError(p, "statement in parameter declaration is not a variable declaration");
+      return false;
+    }
+
+    if (params->firstParameter == nullptr) {
+      params->firstParameter = (VariableDeclaration *)s;
+      currentDecl = (VariableDeclaration *)s;
+    } else {
+      currentDecl->next = (VariableDeclaration *)s;
+      currentDecl = (VariableDeclaration *)s;
+    }
+
+    params->parameterCount++;
+    if (p->token.type != TokenType_SymbolComma && p->token.type != TokenType_ParenClose && p->token.type != TokenType_EndOfBuffer) {
+      ReportError(p, p->token.location, "Expected comma in parameter declaration");
+      return false;
+    }
+
+    if (p->token.type == TokenType_SymbolComma) {
+      NextToken(p);
+    }
+  }
+
+  if (p->token.type == TokenType_EndOfBuffer) {
+    ReportError(p, "Reached end of buffer before end of parameter declaration");
+    return false;
+  } 
+
+  assert(p->token.type == TokenType_ParenClose);
+  NextToken(p); //Eat TokenType_ParenClose
+  return true;
+}
+
 Statement *ParseProcedureDeclaration(Parser *p, Identifier *ident) {
   assert(p->token.type == TokenType_ParenOpen);
-  NextToken(p);
+
 
   ProcedureDeclaration *procDecl = CreateStatement(ProcedureDeclaration, ident->location, p);
   procDecl->identifier = ident;
@@ -495,27 +550,10 @@ Statement *ParseProcedureDeclaration(Parser *p, Identifier *ident) {
   procDecl->parent = p->currentBlock;
   p->currentBlock = procDecl;
 
-  VariableDeclaration *currentDecl = nullptr;
-  while (p->token.type != TokenType_ParenClose) {
-    Statement *s = ParseStatement(p);
-    if (s->statementType != StatementType_VariableDeclaration) {
-      ReportError(p, "statement in procedure arguments is not a variable decl");
-    }
-
-    if (procDecl->firstArgument == nullptr) {
-      procDecl->firstArgument = (VariableDeclaration *)s;
-      currentDecl = (VariableDeclaration *)s;
-    } else {
-      currentDecl->next = (VariableDeclaration *)s;
-      currentDecl = (VariableDeclaration *)s;
-    }
-
-    procDecl->argumentCount++;
+  if (ParseParameterDeclaration(p, &procDecl->params) == false) {
+    return nullptr;
   }
 
-
-  assert(p->token.type == TokenType_ParenClose);
-  NextToken(p); //Eat TokenType_ParenClose
   if (p->token.type == TokenType_BitwiseRightShift) {
     NextToken(p); //Eat TokenType_BitwiseRightShift
     if (ParseTypeInfo(p, &procDecl->returnTypeInfo) == false) {
@@ -538,7 +576,7 @@ Statement *ParseProcedureDeclaration(Parser *p, Identifier *ident) {
       (int)ident->name.length, ident->name.string);
   } else if (procDecl->isForeign == false) {
     NextToken(p); //Eat blockopen
-    ParseCurrentBlock(p);    
+    if(ParseCurrentBlock(p) == nullptr) return nullptr;    
   }
 
   p->currentBlock = procDecl->parent;
@@ -645,7 +683,7 @@ Statement *ParseIdentiferStatement(Parser *p) {
     case TokenType_ParenOpen: {
       Identifier *ident = FindIdentifier(p->currentBlock, identToken);
       if (ident == nullptr) {
-        ReportError(p, identToken.location, "Identifier not found");
+        ReportError(p, identToken.location, "Identifier '%.*s' not found", (int)identToken.length, identToken.text);
         return nullptr;
       }
 
@@ -655,18 +693,26 @@ Statement *ParseIdentiferStatement(Parser *p) {
         return nullptr;
       }
 
-      int argumentCount = 0;
-      Expression *firstArgument = ParseCallArguments(p, procDecl, &argumentCount);
+      
       CallStatement *callStatement = CreateStatement(CallStatement, identToken.location, p);
       callStatement->procedure = procDecl;
-      callStatement->firstArgument = firstArgument;
-      callStatement->argumentCount = argumentCount;
-      assert(p->token.type == TokenType_ParenClose);
-      NextToken(p); //Eat TokenType_ParenClose
+      callStatement->params.parameterList = &procDecl->params;
+      if (ParseParameterInvokation(p, &callStatement->params) == false) {
+        return nullptr;
+      }
+      
       return callStatement;
     } break;
 
-    default: assert(false);
+    case TokenType_Identifier: {
+      ReportError(p, p->token.location, "Unexptected identifier(C style declaration?)");
+      return nullptr;
+    } break;
+
+    default: {
+      ReportError(p, p->token.location, "Unexptected token after identifier");
+      return nullptr;
+    };
   }
 
   assert(false);
@@ -700,7 +746,7 @@ IfStatement *ParseIfStatement(Parser *p) {
   ifStatement->condition = ParseExpression(p);
   if (ifStatement->condition == nullptr) return nullptr;
   if (p->token.type != TokenType_BlockOpen) {
-    ReportError(p, p->token.location, "Expected block after while");
+    ReportError(p, p->token.location, "Expected block after if statement");
     return nullptr;
   }
 
@@ -743,9 +789,50 @@ IfStatement *ParseIfStatement(Parser *p) {
 }
 
 Statement *ParseStatement(Parser *p) {
-  switch(p->token.type) {
+  switch (p->token.type) {
+    case TokenType_SymbolValue:
+    case TokenType_ArrayOpen: {
+      Expression *subscriptExpr = nullptr;
+      if (p->token.type == TokenType_ArrayOpen) {
+        NextToken(p); //Eat TokenType_ArrayOpen
+        subscriptExpr = ParseExpression(p);
+        if (p->token.type != TokenType_ArrayClose) {
+          ReportError(p, p->token.location, "Expected subscript close");
+          return nullptr;
+        }
+        NextToken(p); //Eat TokenType_ArrayClose
+      }
+
+      if (p->token.type != TokenType_Identifier) {
+        ReportError(p, p->token.location, "Expected identifier after subscript");
+        return nullptr;
+      }
+
+      Token identToken = p->token;
+      NextToken(p); //Eat Identifier
+      VariableAssignment *var = ParseVariableAssignment(p,identToken);
+      var->subscriptExpression = subscriptExpr;
+      return var;
+    } break;
+
     case TokenType_Identifier: {
       return ParseIdentiferStatement(p);
+    } break;
+
+    case TokenType_KeywordImport: {
+      NextToken(p); //Eat TokenType_KeywordImport
+      if (p->token.type != TokenType_String) {
+        ReportError(p, p->token.location, "Expected string literal after IMPORT keyword");
+        return nullptr;
+      }
+
+      uint32_t fileID = AddFileToSourceFileList(p->compiler, p->token.text, p->token.length);
+      NextToken(p); //Eat TokenType_KeywordString
+      if (ParseEntireFile(p->compiler, fileID) == false) {
+        return nullptr;
+      }
+
+      return ParseStatement(p);
     } break;
 
 
@@ -805,21 +892,7 @@ bool ParseEntireFile(Compiler *compiler, uint32_t fileID) {
   parser.astAllocator = &compiler->astAllocator;
   parser.stringAllocator = &compiler->stringAllocator;
   parser.logLevel = LogLevel_Verbose;
-  SourceLocation internalDummyLocation = {};
-  internalDummyLocation.fileID = INVALID_FILE_ID;
-
-  Block *globalBlock = CreateStatement(Block, internalDummyLocation, &parser);
-  parser.currentBlock = globalBlock;
-  compiler->typeDeclU8 = CreateBuiltinType(&parser, internalDummyLocation, "U8");
-  compiler->typeDeclU16 = CreateBuiltinType(&parser, internalDummyLocation, "U16");
-  compiler->typeDeclU32 = CreateBuiltinType(&parser, internalDummyLocation, "U32");
-  compiler->typeDeclU64 = CreateBuiltinType(&parser, internalDummyLocation, "U64");
-  compiler->typeDeclS8 = CreateBuiltinType(&parser, internalDummyLocation, "S8");
-  compiler->typeDeclS16 = CreateBuiltinType(&parser, internalDummyLocation, "S16");
-  compiler->typeDeclS32 = CreateBuiltinType(&parser, internalDummyLocation, "S32");
-  compiler->typeDeclS64 = CreateBuiltinType(&parser, internalDummyLocation, "S64");
-  compiler->typeDeclF32 = CreateBuiltinType(&parser, internalDummyLocation, "F32");
-  compiler->typeDeclF64 = CreateBuiltinType(&parser, internalDummyLocation, "F64");
+  parser.currentBlock = compiler->globalBlock;
   InitalizeLexer(&parser.lexer, fileID, fileBuffer);
   NextToken(&parser); //Get the first token in the buffer
   LogInfo(&parser, "Parsing file: %s", sourceFile->path.string);
@@ -827,20 +900,6 @@ bool ParseEntireFile(Compiler *compiler, uint32_t fileID) {
   free(fileBuffer);
 
   if (compiler->errorCount > 0) return false;
-  ValidateBlock(compiler, globalBlock);
-  if (compiler->errorCount > 0) return false;
-  PrintBlock(globalBlock);
-  CodegenGlobalBlock(compiler, globalBlock);
   return true;
 }
 
-bool ParseAllFiles(Compiler *compiler) {
-  while (compiler->filesToParse.size() > 0) {
-    uint32_t fileID = compiler->filesToParse.back();
-    compiler->filesToParse.pop_back();
-    if (ParseEntireFile(compiler, fileID) == false) {
-      return false;
-    }
-  }
-  return true;
-}

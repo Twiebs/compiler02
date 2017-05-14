@@ -6,6 +6,7 @@ enum TokenType {
   TokenType_Integer,
   TokenType_Float,
   TokenType_String,
+  TokenType_Char,
 
   TokenType_ParenOpen,
   TokenType_ParenClose,
@@ -23,6 +24,7 @@ enum TokenType {
   TokenType_SymbolEquals,
   TokenType_SymbolColon,
   TokenType_SymbolDot,
+  TokenType_SymbolComma,
 
   TokenType_LogicalEqual,
   TokenType_LogicalNotEqual,
@@ -51,6 +53,7 @@ enum TokenType {
   TokenType_KeywordReturn,
   TokenType_KeywordForeign,
   TokenType_KeywordCast,
+  TokenType_KeywordImport,
 
   TokenType_EndOfBuffer
 };
@@ -62,6 +65,7 @@ const char *TokenName[] = {
   "TokenType_Integer",
   "TokenType_Float",
   "TokenType_String",
+  "TokenType_Char",
 
   "TokenType_ParenOpen",
   "TokenType_ParenClose",
@@ -79,6 +83,7 @@ const char *TokenName[] = {
   "TokenType_SymbolEquals",
   "TokenType_SymbolColon",
   "TokenType_SymbolDot",
+  "TokenType_SymbolComma",
 
   "TokenType_LogicalEqual",
   "TokenType_LogicalNotEqual",
@@ -107,6 +112,7 @@ const char *TokenName[] = {
   "TokenType_KeywordReturn",
   "TokenType_KeywordForeign",
   "TokenType_KeywordCast",
+  "TokenType_KeywordImport",
 
   "TokenType_EndOfBuffer"
 };
@@ -118,6 +124,7 @@ const char *TokenString[] = {
   "INVALID_STRING_INTEGER",
   "INVALID_STRING_FLOAT",
   "INVALID_STRING_STRING",
+  "INVALID_STRING_CHAR",
 
   "(",
   ")",
@@ -135,6 +142,7 @@ const char *TokenString[] = {
   "=",
   ":",
   ".",
+  ",",
 
   "==", //TokenType_LogicalEqual,
   "!=", //TokenType_LogicalNotEqual,
@@ -164,6 +172,7 @@ const char *TokenString[] = {
   "RETURN",
   "FOREIGN",
   "CAST",
+  "IMPORT",
 
   "INVALID_STRING_END_OF_BUFFER"
 };
@@ -175,6 +184,7 @@ int TokenPrecedence[] = {
   -1, //TokenType_Integer
   -1, //TokenType_Float
   -1, //TokenType_String
+  -1, //TokenType_Char
 
   -1, //TokenType_ParenOpen
   -1, //TokenType_ParenClose
@@ -192,6 +202,7 @@ int TokenPrecedence[] = {
   -1, //TokenType_SymbolEquals
   -1, //TokenType_SymbolColon
   -1, //TokenType_SymbolDot
+  -1, //TokenType_SymbolComma
 
   10, //TokenType_LogicalEqual,
   10, //TokenType_LogicalNotEqual,
@@ -220,6 +231,7 @@ int TokenPrecedence[] = {
   -1, //TokenType_KeywordReturn
   -1, //TokenType_KeywordForeign
   -1, //TokenType_KeywordCast
+  -1, //TokenType_KeywordImport
 
   -1, //TokenType_EndOfBuffer
 };
