@@ -1,4 +1,16 @@
 
+void ErrorReportBegin(Compiler *c, SourceLocation& location) {
+  std::ostream& stream = std::cout;
+  SourceFile *file = &c->sourceFiles[location.fileID];
+  stream << "\033[31;1m" << "[" << file->path.string << ":" <<
+    location.lineNumber << ":" << location.columnNumber << "] " << "\033[0m";
+  c->errorCount++;;
+}
+
+void ErrorReportStreamEnd(Compiler *c) {
+
+}
+
 void ReportError(Compiler *c, const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
@@ -14,7 +26,6 @@ void ReportError(Parser *p, const char *fmt, ...) {
   printf("\n");
   p->compiler->errorCount++;
 }
-
 
 void ReportError(Compiler *compiler, const SourceLocation& location, const char *fmt, ...) {
   SourceFile *file = &compiler->sourceFiles[location.fileID];
@@ -72,6 +83,8 @@ void PrintStatement(Statement *statement, int blockDepth) {
     case StatementType_VariableDeclaration: PrintVariableDeclaration((VariableDeclaration *)statement); break;
     case StatementType_TypeDeclaration: PrintTypeDeclaration((TypeDeclaration *)statement, blockDepth); break;
     case StatementType_ProcedureDeclaration: PrintProcedureDeclaration((ProcedureDeclaration *)statement, blockDepth); break;
+    case StatementType_ConstantDeclaration: PrintConstantDeclaration((ConstantDeclaration *)statement, std::cout); break;
+
     case StatementType_VariableAssignment: PrintVariableAssignment((VariableAssignment *)statement, blockDepth); break;
     case StatementType_CallStatement: PrintCallStatement((CallStatement *)statement); break;
     case StatementType_ReturnStatement: PrintReturnStatement((ReturnStatement *)statement, blockDepth); break;
@@ -92,7 +105,6 @@ void PrintWhileStatement(WhileStatement *ws, int blockDepth) {
   PrintExpression(ws->condition);
   printf("\n");
   PrintBlock(ws, blockDepth + 1);
-  printf("\n");
 }
 
 void PrintIfStatement(IfStatement *is, int blockDepth) {
@@ -113,7 +125,6 @@ void PrintIfStatement(IfStatement *is, int blockDepth) {
     PrintBlock(currentElse, blockDepth + 1);
     currentElse = currentElse->nextElse;
   }
-  printf("\n");
 }
 
 void PrintUnaryOperation(UnaryOperation *unaryOp) {
@@ -136,14 +147,17 @@ void PrintExpression(Expression *expression) {
     case ExpressionType_StringLiteral: PrintStringLiteral((StringLiteral *)expression); break;
 
     case ExpressionType_VariableExpression: PrintVariableExpression((VariableExpression *)expression); break;
+    case ExpressionType_ConstantExpression: PrintConstantExpression((ConstantExpression *)expression, std::cout); break;
     case ExpressionType_CallExpression: PrintCallExpression((CallExpression *)expression); break;
+    case ExpressionType_MemberAccessExpression: PrintMemberAccessExpression((MemberAccessExpression *)expression); break;
+
     case ExpressionType_UnaryOperation: PrintUnaryOperation((UnaryOperation *)expression); break;
     case ExpressionType_BinaryOperation: PrintBinaryOperation((BinaryOperation *)expression); break;
-    case ExpressionType_MemberAccessExpression: PrintMemberAccessExpression((MemberAccessExpression *)expression); break;
     case ExpressionType_CastExpression: PrintCastExpression((CastExpression *)expression); break;
 
     default: {
-      printf("UNIMPLEMENTED PRINT EXPRESSION\n");
+      assert(false);
+      printf("UNIMPLEMENTED PRINT EXPRESSION");
     } break;
   };
 }
@@ -155,6 +169,13 @@ void PrintBlock(Block *block, int blockDepth) {
     printf("\n");
     currentStatement = currentStatement->next;
   }
+}
+
+void PrintTypeInfo(TypeInfo *typeInfo, std::ostream& stream) {
+  Identifier *typeIdent = typeInfo->type->identifier;
+  for (size_t i = 0; i < typeInfo->indirectionLevel; i++) stream << "@";
+  if (typeInfo->arraySize > 0) stream << "[" << typeInfo->arraySize << "]";
+  stream << typeIdent->name.string;
 }
 
 void PrintVariableDeclaration(VariableDeclaration *varDecl) {
@@ -183,8 +204,6 @@ void PrintTypeDeclaration(TypeDeclaration *typeDecl, int blockDepth) {
   } else {
     assert(false);
   }
-
-  printf("\n");
 }
 
 void PrintParameterDeclaration(ParameterDeclaration *params) {
@@ -195,7 +214,7 @@ void PrintParameterDeclaration(ParameterDeclaration *params) {
     current = (VariableDeclaration *)current->next;
     if (current != nullptr) printf(", ");
   }
-  printf(")\n");
+  printf(")");
 }
 
 void PrintParameterInvokation(ParameterInvokation *params) {
@@ -206,20 +225,30 @@ void PrintParameterInvokation(ParameterInvokation *params) {
     current = current->next;
     if (current != nullptr) printf(", ");
   }
-  printf(")\n");
+  printf(")");
+}
+
+void PrintConstantDeclaration(ConstantDeclaration *c, std::ostream& s) {
+  s << c->identifier->name.string << " :: ";
+  PrintExpression(c->expression);
 }
 
 void PrintProcedureDeclaration(ProcedureDeclaration *procDecl, int blockDepth) {
   Identifier *ident = procDecl->identifier;
   printf("%.*s :: ", (int)ident->name.length, ident->name.string);
   PrintParameterDeclaration(&procDecl->params);
+  if (procDecl->returnTypeInfo.type != 0) {
+    printf(" >> ");
+    PrintTypeInfo(&procDecl->returnTypeInfo, std::cout);
+  }
+
+  printf("\n");
   Statement *currentStatement = procDecl->firstStatement;
   while (currentStatement != nullptr) {
     PrintStatement(currentStatement, blockDepth + 1);
     printf("\n");
     currentStatement = currentStatement->next;
   }
-  printf("\n");
 }
 
 void PrintVariableAssignment(VariableAssignment *varAssignment, int blockDepth) {
@@ -269,9 +298,10 @@ void PrintVariableExpression(VariableExpression *varExpr) {
 
 void PrintCastExpression(CastExpression *castExpr) {
   Identifier *typeIdent = castExpr->typeInfo.type->identifier;
-  printf("%.*s(", (int)typeIdent->name.length, typeIdent->name.string);
-  PrintExpression(castExpr->expression);
+  printf("CAST(");
+  PrintTypeInfo(&castExpr->typeInfo, std::cout);
   printf(")");
+  PrintExpression(castExpr->expression);
 }
 
 void PrintCallExpression(CallExpression *callExpr) {
@@ -280,13 +310,17 @@ void PrintCallExpression(CallExpression *callExpr) {
   PrintParameterInvokation(&callExpr->params);
 }
 
+void PrintConstantExpression(ConstantExpression *ce, std::ostream& s) {
+  s << ce->constant->identifier->name.string;
+}
+
 void PrintMemberAccessExpression(MemberAccessExpression *expr) {
   Identifier *ident = expr->varDecl->identifier;
   printf("%.*s", (int)ident->name.length, ident->name.string);
   TypeDeclaration *currentType = (TypeDeclaration *)expr->varDecl->typeInfo.type;
   for (size_t i = 0; i < expr->memberAccess.indexCount; i++) {
     VariableDeclaration *currentMember = (VariableDeclaration *)currentType->firstStatement;
-    for (size_t j = 0; j < expr->memberAccess.indices[i]; i++)
+    for (size_t j = 0; j < expr->memberAccess.indices[i]; j++)
       currentMember = (VariableDeclaration *)currentMember->next;
     Identifier *memberIdent = currentMember->identifier;
     printf(".%.*s", (int)memberIdent->name.length, memberIdent->name.string);
@@ -298,4 +332,35 @@ void PrintBinaryOperation(BinaryOperation *binOp) {
   PrintExpression(binOp->lhs);
   printf(" %s ", TokenString[binOp->binopToken]);
   PrintExpression(binOp->rhs);
+}
+
+//=================================================
+
+CodePrinter& CodePrinter::operator<<(const char *string) {
+  *stream << string;
+  return *this;
+}
+
+CodePrinter& CodePrinter::operator<<(Expression *expression) {
+  PrintExpression(expression);
+  return *this;
+}
+
+CodePrinter& CodePrinter::operator<<(ParameterInvokation *params) {
+  PrintParameterInvokation(params);
+  return *this;
+}
+
+CodePrinter& CodePrinter::operator<<(ParameterDeclaration *params) {
+  PrintParameterDeclaration(params);
+  return *this;
+}
+
+CodePrinter& CodePrinter::operator<<(TypeInfo *typeInfo) {
+  *stream << TerminalColorStrings[typeColor];
+  Identifier *typeIdent = typeInfo->type->identifier;
+  for (size_t i = 0; i < typeInfo->indirectionLevel; i++) *stream << "@";
+  if (typeInfo->arraySize > 0) *stream << "[" << typeInfo->arraySize << "]";
+  *stream << typeIdent->name.string;
+  return *this;
 }

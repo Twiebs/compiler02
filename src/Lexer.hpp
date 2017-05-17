@@ -25,6 +25,7 @@ enum TokenType {
   TokenType_SymbolColon,
   TokenType_SymbolDot,
   TokenType_SymbolComma,
+  TokenType_DoubleColon,
 
   TokenType_LogicalEqual,
   TokenType_LogicalNotEqual,
@@ -84,6 +85,7 @@ const char *TokenName[] = {
   "TokenType_SymbolColon",
   "TokenType_SymbolDot",
   "TokenType_SymbolComma",
+  "TokenType_DoubleColon",
 
   "TokenType_LogicalEqual",
   "TokenType_LogicalNotEqual",
@@ -143,6 +145,7 @@ const char *TokenString[] = {
   ":",
   ".",
   ",",
+  "::",
 
   "==", //TokenType_LogicalEqual,
   "!=", //TokenType_LogicalNotEqual,
@@ -203,6 +206,7 @@ int TokenPrecedence[] = {
   -1, //TokenType_SymbolColon
   -1, //TokenType_SymbolDot
   -1, //TokenType_SymbolComma
+  -1, //TokenType_DoubleColon
 
   10, //TokenType_LogicalEqual,
   10, //TokenType_LogicalNotEqual,

@@ -21,6 +21,7 @@ struct Compiler {
   TypeDeclaration *typeDeclF64;
 
   uint64_t errorCount;
+  CodePrinter printer;
 };
 
 void InitalizeCompiler(Compiler *compiler);

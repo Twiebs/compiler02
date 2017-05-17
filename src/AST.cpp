@@ -53,6 +53,13 @@ bool IsFloatType(TypeDeclaration *type, Compiler *compiler) {
   return result;
 }
 
+bool IsLiteralExpression(Expression *e) {
+  bool result = (e->expressionType == ExpressionType_IntegerLiteral) ||
+    (e->expressionType == ExpressionType_FloatLiteral) ||
+    (e->expressionType == ExpressionType_StringLiteral);
+  return result;
+}
+
 bool IsBitwiseBinOp(TokenType type) {
   switch(type) {
     case TokenType_BitwiseAnd:

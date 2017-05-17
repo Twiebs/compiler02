@@ -8,6 +8,7 @@ enum StatementType {
   StatementType_VariableDeclaration,
   StatementType_TypeDeclaration,
   StatementType_ProcedureDeclaration,
+  StatementType_ConstantDeclaration,
 
   StatementType_VariableAssignment,
   StatementType_CallStatement,
@@ -25,6 +26,7 @@ const char *StatementName[] = {
   "StatementType_VariableDeclaration",
   "StatementType_TypeDeclaration",
   "StatementType_ProcedureDeclaration",
+  "StatementType_ConstantDeclaration",
 
   "StatementType_VariableAssignment",
   "StatementType_CallStatement",
@@ -43,6 +45,7 @@ enum ExpressionType {
   ExpressionType_StringLiteral,
 
   ExpressionType_VariableExpression,
+  ExpressionType_ConstantExpression,
   ExpressionType_CallExpression,
   ExpressionType_UnaryOperation,
   ExpressionType_BinaryOperation,
@@ -59,6 +62,7 @@ const char *ExpressionName[] = {
   "ExpressionType_StringLiteral",
 
   "ExpressionType_VariableExpression",
+  "ExpressionType_ConstantExpression",
   "ExpressionType_CallExpression",
   "ExpressionType_UnaryOperation",
   "ExpressionType_BinaryOperation",
@@ -84,6 +88,7 @@ struct Block : Statement {
   Identifier *firstIdentifier;
   Identifier *lastIdentifier;
   Statement *firstStatement;
+  Statement *lastStatement;
   uint32_t statementCount;
   Block *parent;
 };
@@ -137,6 +142,13 @@ struct VariableDeclaration : Statement {
   TypeInfo typeInfo;
   Expression *initalExpression;
   llvm::Value *llvmAlloca;
+};
+
+struct ConstantDeclaration : Statement {
+  Identifier *identifier;
+  TypeInfo typeInfo;
+  Expression *expression;
+  void *backendPointer;
 };
 
 struct ParameterDeclaration {
@@ -201,6 +213,10 @@ struct VariableExpression : Expression {
   VariableDeclaration *varDecl;
 };
 
+struct ConstantExpression : Expression {
+  ConstantDeclaration *constant;
+};
+
 struct IntegerLiteral : Expression {
    uint64_t unsignedValue;
 };
@@ -226,6 +242,9 @@ bool IsUnsignedIntegerType(TypeDeclaration *type, Compiler *compiler);
 bool IsSignedIntegerType(TypeDeclaration *type, Compiler *compiler);
 bool IsIntegerType(TypeDeclaration *type, Compiler *compiler);
 bool IsFloatType(TypeDeclaration *type, Compiler *compiler);
+
+bool IsLiteralExpression(Expression *e);
+
 TypeInfo *GetSubTypeAtIndex(TypeInfo *type, size_t index) ;
 bool IsBitwiseBinOp(TokenType type);
 

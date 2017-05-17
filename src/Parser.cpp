@@ -59,18 +59,18 @@ TypeDeclaration *CreateBuiltinType(Parser *p, SourceLocation location, const cha
 //When this procedure is called the parser must have already
 //consumed the block open token
 Block *ParseCurrentBlock(Parser *p) {
-  Statement *currentStatement = nullptr;
   while (p->token.type != TokenType_BlockClose && p->token.type != TokenType_EndOfBuffer) {
     Statement *statement = ParseStatement(p);
     if (statement == nullptr) return nullptr;
     if (p->currentBlock->firstStatement == nullptr) {
       p->currentBlock->firstStatement = statement;
     }
-    if (currentStatement == nullptr) {
-      currentStatement = statement;
+
+    if (p->currentBlock->lastStatement == nullptr) {
+      p->currentBlock->lastStatement = statement;
     } else {
-      currentStatement->next = statement;
-      currentStatement = currentStatement->next;;
+      p->currentBlock->lastStatement->next = statement;
+      p->currentBlock->lastStatement = p->currentBlock->lastStatement->next;;
     }
     p->currentBlock->statementCount++;
   }
@@ -241,6 +241,7 @@ Expression *ParsePrimaryExpression(Parser *p) {
     } break;
 
     case TokenType_Identifier: {
+      Token identToken = p->token;
       Identifier *ident = FindIdentifier(p->currentBlock, p->token);
       if (ident == nullptr) {
         ReportError(p, p->token.location, "Could not find identifier %.*s",
@@ -281,6 +282,13 @@ Expression *ParsePrimaryExpression(Parser *p) {
       
       else {
         assert(ident->declaration != nullptr);
+        if (ident->declaration->statementType == StatementType_ConstantDeclaration) {
+          ConstantExpression *ce = CreateExpression(ConstantExpression, identToken.location, p);
+          ce->constant = (ConstantDeclaration *)ident->declaration;
+          ce->typeInfo = ce->constant->typeInfo;
+          return ce;
+        }
+
         VariableDeclaration *varDecl = (VariableDeclaration *)ident->declaration;
         if (varDecl->statementType != StatementType_VariableDeclaration) {
           ReportError(p, "Identifier %.*s does not represent a variable",
@@ -602,35 +610,6 @@ VariableDeclaration *ParseVariableDeclaration(Parser *p, Identifier *ident) {
   return varDecl;
 }
 
-Statement *ParseIdentifierDecl(Parser *p, Token identToken) {
-  Identifier *ident = FindIdentifier(p->currentBlock, identToken);
-  if (ident != nullptr) {
-    ReportError(p, "Cannot declare new identifier %.*s", identToken.length, identToken.text);
-    return nullptr;
-  }
-
-  ident = CreateIdentifier(p, identToken);
-
-  //This is a static identifier declaration.  The identifier can
-  //either be a type, procedure, or static variable
-  if (p->token.type == TokenType_SymbolColon) {
-    NextToken(p);
-    if (p->token.type == TokenType_KeywordType) {
-      return ParseTypeDeclaration(p, ident);
-    } else if (p->token.type == TokenType_ParenOpen) {
-      return ParseProcedureDeclaration(p, ident);
-    }
-  }
-
-  //This is a variable declaration
-  return ParseVariableDeclaration(p, ident);
-
-
-
-  assert(false);
-  return nullptr;
-}
-
 VariableAssignment *ParseVariableAssignment(Parser *p, Token identToken) {
   VariableAssignment *varAssignment = CreateStatement(VariableAssignment, identToken.location, p);
   Identifier *ident = FindIdentifier(p->currentBlock, identToken);
@@ -664,16 +643,54 @@ VariableAssignment *ParseVariableAssignment(Parser *p, Token identToken) {
   return varAssignment;
 }
 
+ConstantDeclaration *ParseConstantDeclaration(Parser *p, Identifier *ident) {
+  ConstantDeclaration *result = CreateStatement(ConstantDeclaration, ident->location, p);
+  result->identifier = ident;
+  ident->declaration = result;
+  result->expression = ParseExpression(p);
+  result->typeInfo = result->expression->typeInfo;
+  return result;
+}
 
 Statement *ParseIdentiferStatement(Parser *p) {
   assert(p->token.type == TokenType_Identifier);
   Token identToken = p->token;
   NextToken(p);
   switch (p->token.type) {
+
     case TokenType_SymbolColon: {
       NextToken(p); //Eat single colon
-      return ParseIdentifierDecl(p, identToken);
+      Identifier *ident = FindIdentifier(p->currentBlock, identToken);
+      if (ident != nullptr) {
+        ReportError(p, "Cannot declare new identifier %.*s", identToken.length, identToken.text);
+        return nullptr;
+      }
+
+      ident = CreateIdentifier(p, identToken);
+      //This is a variable declaration
+      return ParseVariableDeclaration(p, ident);
     } break;
+
+    //This is a static identifier declaration.  The identifier can
+    //either be a type, procedure, or static variable
+    case TokenType_DoubleColon: {
+      NextToken(p); //Eat double colon
+      Identifier *ident = FindIdentifier(p->currentBlock, identToken);
+      if (ident != nullptr) {
+        ReportError(p, "Cannot declare new identifier %.*s", identToken.length, identToken.text);
+        return nullptr;
+      }
+
+      ident = CreateIdentifier(p, identToken);
+      if (p->token.type == TokenType_KeywordType) {
+        return ParseTypeDeclaration(p, ident);
+      } else if (p->token.type == TokenType_ParenOpen) {
+        return ParseProcedureDeclaration(p, ident);
+      } else {
+        return ParseConstantDeclaration(p, ident);
+      }
+    } break;
+
 
     case TokenType_SymbolEquals:
     case TokenType_SymbolDot: {
@@ -891,7 +908,7 @@ bool ParseEntireFile(Compiler *compiler, uint32_t fileID) {
   parser.compiler = compiler;
   parser.astAllocator = &compiler->astAllocator;
   parser.stringAllocator = &compiler->stringAllocator;
-  parser.logLevel = LogLevel_Verbose;
+  parser.logLevel = LogLevel_Info;
   parser.currentBlock = compiler->globalBlock;
   InitalizeLexer(&parser.lexer, fileID, fileBuffer);
   NextToken(&parser); //Get the first token in the buffer

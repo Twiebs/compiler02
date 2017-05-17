@@ -36,8 +36,8 @@ struct SourceLocation {
 #include "Utility.hpp"
 #include "Lexer.hpp"
 #include "AST.hpp"
-#include "Compiler.hpp"
 #include "Diagnostics.hpp"
+#include "Compiler.hpp"
 #include "Parser.hpp"
 #include "Validation.hpp"
 #include "LLVMCodegen.hpp"
@@ -53,6 +53,9 @@ struct SourceLocation {
 void InitalizeCompiler(Compiler *compiler) {
   InitalizeAllocator(&compiler->stringAllocator, 32768);
   InitalizeAllocator(&compiler->astAllocator, 32768);
+  compiler->printer.stream = &std::cout;
+  compiler->printer.typeColor = TerminalColor::LightGreen;
+  compiler->printer.expressionColor = TerminalColor::Blue;
 
   //This is a crazy hack to generate statements in a global
   //block because these procedures currently take a parser pointer
@@ -102,7 +105,6 @@ bool HandleCommandLineArguments(Compiler *compiler, int argc, const char **argv)
 bool RunFrontendAndBackend(Compiler *compiler) {
   ParseEntireFile(compiler, 0);
   if (ValidateBlock(compiler, compiler->globalBlock) == false) {
-    ReportError(compiler, "VALIDATION FAILED");
     return false;
   }
 

@@ -1,0 +1,102 @@
+
+malloc :: (size: U64) >> @U8 FOREIGN
+free :: (ptr: @U8) FOREIGN
+
+#=========================================
+
+IMPORT "examples/stdlib/sdl.src"
+IMPORT "examples/stdlib/string.src"
+IMPORT "examples/stdlib/io.src"
+
+RGBA8 :: TYPE
+  r: U8
+  g: U8
+  b: U8
+  a: U8
+
+Vector3 :: TYPE
+  x: F32
+  y: F32
+  z: F32
+
+Vertex :: TYPE
+  position: Vector3
+  normal: Vector3
+  color: RGBA8
+
+Render_Context :: TYPE
+  buffer_width: U32
+  buffer_height: U32
+  buffer_color: @U8
+  buffer_depth: @U32
+
+Indexed_Triangle_Mesh :: TYPE
+  vertices: @Vertex
+  indices: @U32
+  vertex_count: U32
+  index_count: U32
+
+render_context_initalize :: (ctx : @Render_Context, viewport_width: U32, viewport_height: U32)
+  ctx.buffer_width = viewport_width
+  ctx.buffer_height = viewport_height
+  required_memory: U64 = CAST(U64)((viewport_width * viewport_height) * 3)
+  required_memory = required_memory + CAST(U64)(viewport_width * viewport_height * 4)
+  memory: @U8 = malloc(required_memory)
+  ctx.buffer_color = memory
+  ctx.buffer_depth = CAST(@U32)(CAST(U64)memory + CAST(U64)(CAST(S32)3 * (viewport_width * viewport_height)))
+
+render_context_terminate :: (ctx : @Render_Context)
+  free(ctx.buffer_color)
+
+main :: () >> S32
+  BUFFER_WIDTH :: 1280
+  BUFFER_HEIGHT :: 720
+
+  ctx: Render_Context
+  render_context_initalize(@ctx, BUFFER_WIDTH, BUFFER_HEIGHT)
+  render_context_terminate(@ctx)
+
+  SDL_Init(SDL_INIT_VIDEO)
+  sdl_window: @SDL_Window = SDL_CreateWindow("SoftwareRasterizer", 0, 0, BUFFER_WIDTH, BUFFER_HEIGHT, SDL_WINDOW_OPENGL)
+  sdl_renderer: @SDL_Renderer = SDL_CreateRenderer(sdl_window, -1, CAST(U32)(SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC))
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1)
+  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24)
+  SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8)
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2)
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2)
+  sdl_glcontext: @SDL_GLContext = SDL_GL_CreateContext(sdl_window)
+
+  texture: @SDL_Texture = SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STREAMING, BUFFER_WIDTH, BUFFER_HEIGHT)
+  
+
+  is_running: S32 = 1
+  WHILE is_running == 1
+    SDL_RenderClear(sdl_renderer)
+    
+    pixels: @U8 = 0
+    pitch: S32 = 0
+    SDL_LockTexture(texture, CAST(@SDL_Rect)0, @pixels, @pitch)
+    
+    Print("fuck\n")
+    PrintU64Hex(CAST(U64)ctx.buffer_color)
+    
+
+    index: U64 = 0
+    write_index: U64 = 0
+    read_index: U64 = 0
+    WHILE index < CAST(U64)(BUFFER_WIDTH * BUFFER_HEIGHT)
+      #Print("fuck\n")
+      [write_index + 2]pixels = [read_index + 0]ctx.buffer_color
+      
+      #[write_index + 1]pixels = [read_index + 1]ctx.buffer_color
+      #[write_index + 0]pixels = [read_index + 2]ctx.buffer_color
+      #read_index = read_index + 3
+      #write_index = write_index + 4
+      #index = index + 1
+    SDL_UnlockTexture(texture)
+
+    SDL_RenderCopy(sdl_renderer, texture, CAST(@SDL_Rect)0, CAST(@SDL_Rect)0)
+    SDL_RenderPresent(sdl_renderer)
+    
+
+  RETURN 0

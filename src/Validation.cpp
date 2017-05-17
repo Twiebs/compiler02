@@ -4,6 +4,7 @@ bool ValidateStatement(Compiler *compiler, Statement *statement) {
     case StatementType_VariableDeclaration: return ValidateVariableDeclaration(compiler, (VariableDeclaration *)statement);
     case StatementType_ProcedureDeclaration: return ValidateProcedureDeclaration(compiler, (ProcedureDeclaration *)statement);
     case StatementType_TypeDeclaration: return ValidateTypeDeclaration((TypeDeclaration *)statement);
+    case StatementType_ConstantDeclaration: return ValidateConstantDeclaration(compiler, (ConstantDeclaration *)statement);
 
     case StatementType_VariableAssignment: return ValidateVariableAssignment(compiler, (VariableAssignment *)statement);
     case StatementType_CallStatement: return ValidateCallStatement(compiler, (CallStatement *)statement);
@@ -33,6 +34,7 @@ bool ValidateExpression(Compiler *c, Expression *expr) {
     case ExpressionType_CastExpression: return ValidateCastExpression(c, (CastExpression *)expr);
     case ExpressionType_CallExpression: return ValidateCallExpression(c, (CallExpression *)expr);
 
+    case ExpressionType_ConstantExpression:
     case ExpressionType_MemberAccessExpression:
     case ExpressionType_VariableExpression:
     case ExpressionType_IntegerLiteral:
@@ -98,12 +100,16 @@ bool ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params
     while (current != nullptr) {
       assert(currentVar != nullptr);
       if (AttemptTypeCoercionIfRequired(compiler, &currentVar->typeInfo, current) == false) {
-        ReportError(compiler, current->location, "Parameter type mismatch");
+        ReportErrorT(compiler, current->location, "In parameter invokation '",
+          TERMINAL_COLOR_CYAN, params, TERMINAL_COLOR_DEFAULT,
+          "': \n   Expression '", TERMINAL_COLOR_CYAN, current, TERMINAL_COLOR_DEFAULT,
+          "' of type '", TERMINAL_COLOR_CYAN, &current->typeInfo, TERMINAL_COLOR_DEFAULT, 
+          "' does not match parameter declaration",
+          TERMINAL_COLOR_CYAN, paramDecl, TERMINAL_COLOR_DEFAULT, "\n");
         return false;
       } 
       current = current->next;
       currentVar = (VariableDeclaration *)currentVar->next;
-
     }
   }
 
@@ -143,6 +149,17 @@ int CheckNumericLiteralAggregate(Compiler *c, Expression *e) {
   return 0;
 }
 
+
+bool ValidateConstantDeclaration(Compiler *compiler, ConstantDeclaration *c) {
+  ValidateExpression(compiler, c->expression);
+  if (!IsLiteralExpression(c->expression)) {
+    ReportError(compiler, "constant must be literal");
+    return false;
+  }
+
+  return true;
+}
+
 static void PropagateTypeInfoToChildren(Expression *e, TypeInfo *ti) {
   if (e->expressionType == ExpressionType_BinaryOperation) {
     BinaryOperation *binop = (BinaryOperation *)e;
@@ -162,11 +179,19 @@ bool ValidateBinaryOperation(Compiler *compiler, BinaryOperation *binOp) {
 
   bool result = AttemptTypeCoercionIfRequired(compiler, &binOp->lhs->typeInfo, binOp->rhs);
   if (result == false) {
-    Identifier *expected = binOp->lhs->typeInfo.type->identifier;
-    Identifier *actual = binOp->rhs->typeInfo.type->identifier;
-    ReportError(compiler, binOp->location, "Binary Operand Type Mismatch: LHS(%s) does not match RHS(%s)"
-    , expected->name.string, actual->name.string);
-    return false;
+
+#if 0
+    ReportErrorT(compiler, binOp->location, "Binary Operand Type Mismatch:\n  LHS expression '",
+      TERMINAL_COLOR_BLUE, binOp->lhs, TERMINAL_COLOR_DEFAULT, "' of type '",
+      TERMINAL_COLOR_LIGHTGREEN, &binOp->lhs->typeInfo, TERMINAL_COLOR_DEFAULT,
+      "' does not match RHS expression '", TERMINAL_COLOR_BLUE, binOp->rhs, TERMINAL_COLOR_DEFAULT,
+      "' of type '", TERMINAL_COLOR_LIGHTGREEN, &binOp->rhs->typeInfo, TERMINAL_COLOR_DEFAULT, "'\n");
+#endif
+
+    ReportErrorC(compiler, binOp->location, "Binary Operand Type Mismatch:\n  LHS expression '" <<
+      binOp->lhs << "' of type '" << &binOp->lhs->typeInfo << "' does not match RHS expression '" <<
+      binOp->rhs << "' of type '" << &binOp->rhs->typeInfo << "'\n");
+
   } 
 
   if (IsBitwiseBinOp(binOp->binopToken)) {
@@ -181,6 +206,7 @@ bool ValidateBinaryOperation(Compiler *compiler, BinaryOperation *binOp) {
   return result;
 }
 
+//TODO make sure casts are Valid here
 bool ValidateCastExpression(Compiler *compiler, CastExpression *cast) {
   if (ValidateExpression(compiler, cast->expression) == false) return false;
   return true;
@@ -222,6 +248,14 @@ bool AttemptTypeCoercionIfRequired(Compiler *compiler, TypeInfo *requestedType, 
   }
 
   int literalType = CheckNumericLiteralAggregate(compiler, expr);
+  if (expr->expressionType == ExpressionType_ConstantExpression) {
+    ConstantExpression *c = (ConstantExpression *)expr;
+    if (c->constant->expression->expressionType == ExpressionType_IntegerLiteral) {
+      literalType = 1;
+    } else if (c->constant->expression->expressionType == ExpressionType_FloatLiteral) {
+      literalType = 2;
+    }
+  }
 
   if (literalType == 1 && IsIntegerType(requestedType->type, compiler)) {
     IntegerLiteral *intLiteral = (IntegerLiteral *)expr;
@@ -273,7 +307,7 @@ bool ValidateProcedureDeclaration(Compiler *compiler, ProcedureDeclaration *proc
 bool ValidateBlock(Compiler *compiler, Block *block) {
   Statement *statement = block->firstStatement;
   while (statement != nullptr) {
-    if (ValidateStatement(compiler, statement) == false) return false;
+    ValidateStatement(compiler, statement);
     statement = statement->next;
   }
   return true;

@@ -1,0 +1,5 @@
+
+TestBinaryOperationErrors :: ()
+  f0: F32 = 1.0 + 47
+  i0: S64 = 23 + "Goat"
+  i1: S64 = 4.0 + 3.7

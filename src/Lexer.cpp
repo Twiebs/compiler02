@@ -413,6 +413,7 @@ Token GetToken(Lexer *lex) {
   else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalLessOrEqual, LiteralAndLength("<="))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalGreaterOrEqual, LiteralAndLength(">="))) return token;
 
+  else if (SetTokenTypeIfMatchAndAppend(TokenType_DoubleColon, LiteralAndLength("::"))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolColon, LiteralAndLength(":"))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolEquals, LiteralAndLength("="))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolDot, LiteralAndLength("."))) return token;
