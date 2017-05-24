@@ -14,6 +14,7 @@ enum class TerminalColor {
   Red,
   Cyan,
   Blue,
+  Magenta,
   LightGreen,
 };
 
@@ -23,8 +24,15 @@ static const char *TerminalColorStrings[] = {
   "\033[31;1m", //Red
   "\033[36;1m", //Cyan
   "\033[34;1m", //Blue
+  "\033[35;1m", //Magenta
   "\033[92;1m", //LightGreen
 };
+
+static const char *TERMINAL_COLOR_RED = "\033[31;1m";
+static const char *TERMINAL_COLOR_CYAN = "\033[36;1m";
+static const char *TERMINAL_COLOR_BLUE = "\033[34;1m";
+static const char *TERMINAL_COLOR_LIGHTGREEN = "\033[92;1m";
+static const char *TERMINAL_COLOR_DEFAULT = "\033[0m";
 
 //Designing the error and warning API is very nontrivial.  I want
 //the option to multithread the frontend without making huge architectural
@@ -52,28 +60,58 @@ void ReportWarning(Parser *p, const SourceLocation& location, const char *fmt, .
 //more eaisly be transitioned into a multithreaded pass if desired.
 void ErrorReportBegin(Compiler *c, SourceLocation& location);
 void ErrorReportStreamEnd(Compiler *c);
-
-#define ReportErrorT(c,l, ...) ErrorReportBegin(c, l); PrintAsText(std::cout, __VA_ARGS__)
-
 #define ReportErrorC(c,l, msg) ErrorReportBegin(c, l); c->printer << msg
 
 //Internal logging routines for developer use and only
 void LogInfo(Parser *p, const char *fmt, ...);
 void LogVerbose(Parser *p, const char *fmt, ...);
 
+//This class wraps a abstract std::ostream and provides
+//pretty printing of the AST as source code.  This is used
+//in error reporting.
 class CodePrinter {
+
+  void setColor(TerminalColor color);
+
 public:
-  std::ostream* stream;
+  std::ostream *stream;
+
   TerminalColor typeColor;
   TerminalColor expressionColor;
+  TerminalColor defaultColor;
+  TerminalColor keywordColor;
 
+  //Basic types stream fowarder
   CodePrinter& operator<<(const char *string);
-
+  
+  //Expression printers
   CodePrinter& operator<<(Expression *expression);
+  CodePrinter& operator<<(CastExpression *expression);
+  CodePrinter& operator<<(SizeOfExpression *expression);
+  
 
+  //Single statement code printer procedures
+  CodePrinter& operator<<(VariableAssignment *varAssign);
+  
+  //Utility Non AST Print Routines
+  CodePrinter& operator<<(Identifier *ident);
   CodePrinter& operator<<(TypeInfo *typeInfo);
   CodePrinter& operator<<(ParameterInvokation *params);
   CodePrinter& operator<<(ParameterDeclaration *params);
+  CodePrinter& operator<<(TypeMemberAccess *memberAccess);
+};
+
+//This class wraps a abstract std::ostream and provides
+//pretty printing of the AST in a xml like tree representation.
+class ASTPrinter {
+public:
+  ASTPrinter(std::ostream& s);
+
+private:
+  std::ostream& stream;
+  TerminalColor statementColor;
+  TerminalColor expressionColor;
+  void setCurrentColor(TerminalColor color);
 };
 
 //Debug procedures to pretty print AST represntation of
@@ -109,29 +147,3 @@ void PrintCastExpression(CastExpression *castExpr);
 void PrintParameterDeclaration(ParameterDeclaration *params);
 void PrintParameterInvokation(ParameterInvokation *params);
 void PrintTypeInfo(TypeInfo *typeInfo, std::ostream& stream);
-
-void PrintAsText(std::ostream& stream) {}
-
-template<typename TFirst, typename... TArgs>
-void PrintAsText(std::ostream& stream, TFirst first, TArgs... args);
-
-template<typename... TArgs> 
-void PrintAsText(std::ostream& stream, Expression *expression, TArgs... args)  {
-  switch (expression->expressionType) {
-    case ExpressionType_IntegerLiteral: PrintIntegerLiteral((IntegerLiteral *)expression); break;
-    case ExpressionType_FloatLiteral: PrintFloatLiteral((FloatLiteral *)expression); break;
-    case ExpressionType_StringLiteral: PrintStringLiteral((StringLiteral *)expression); break;
-
-    case ExpressionType_VariableExpression: PrintVariableExpression((VariableExpression *)expression); break;
-    case ExpressionType_CallExpression: PrintCallExpression((CallExpression *)expression); break;
-    case ExpressionType_UnaryOperation: PrintUnaryOperation((UnaryOperation *)expression); break;
-    case ExpressionType_BinaryOperation: PrintBinaryOperation((BinaryOperation *)expression); break;
-    case ExpressionType_MemberAccessExpression: PrintMemberAccessExpression((MemberAccessExpression *)expression); break;
-    case ExpressionType_CastExpression: PrintCastExpression((CastExpression *)expression); break;
-    default: {
-      printf("UNIMPLEMENTED PRINT EXPRESSION\n");
-    } break;
-  };
-  PrintAsText(stream, args...);
-}
-

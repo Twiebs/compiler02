@@ -55,6 +55,7 @@ enum TokenType {
   TokenType_KeywordForeign,
   TokenType_KeywordCast,
   TokenType_KeywordImport,
+  TokenType_KeywordSizeOf,
 
   TokenType_EndOfBuffer
 };
@@ -115,6 +116,8 @@ const char *TokenName[] = {
   "TokenType_KeywordForeign",
   "TokenType_KeywordCast",
   "TokenType_KeywordImport",
+  "TokenType_KeywordSizeOf",
+
 
   "TokenType_EndOfBuffer"
 };
@@ -176,6 +179,7 @@ const char *TokenString[] = {
   "FOREIGN",
   "CAST",
   "IMPORT",
+  "SIZEOF",
 
   "INVALID_STRING_END_OF_BUFFER"
 };
@@ -208,14 +212,14 @@ int TokenPrecedence[] = {
   -1, //TokenType_SymbolComma
   -1, //TokenType_DoubleColon
 
-  10, //TokenType_LogicalEqual,
-  10, //TokenType_LogicalNotEqual,
+  15, //TokenType_LogicalEqual,
+  15, //TokenType_LogicalNotEqual,
   10, //TokenType_LogicalAnd,
   10, //TokenType_LogicalOr,
-  10, //TokenType_LogicalLessThan,
-  10, //TokenType_LogicalGreaterThan,
-  10, //TokenType_LogicalLessOrEqual, 
-  10, //TokenType_LogicalGreaterOrEqual,
+  15, //TokenType_LogicalLessThan,
+  15, //TokenType_LogicalGreaterThan,
+  15, //TokenType_LogicalLessOrEqual, 
+  15, //TokenType_LogicalGreaterOrEqual,
 
   10, //TokenType_SymbolOr
   10, //TokenType_BitwiseAnd
@@ -236,6 +240,7 @@ int TokenPrecedence[] = {
   -1, //TokenType_KeywordForeign
   -1, //TokenType_KeywordCast
   -1, //TokenType_KeywordImport
+  -1, //TokenType_KeywordSizeOf
 
   -1, //TokenType_EndOfBuffer
 };

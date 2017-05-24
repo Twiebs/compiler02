@@ -1,12 +1,16 @@
 
-malloc :: (size: U64) >> @U8 FOREIGN
-free :: (ptr: @U8) FOREIGN
+IMPORT "stdlib/sdl.src"
+IMPORT "stdlib/string.src"
+IMPORT "stdlib/io.src"
+IMPORT "stdlib/debug.src"
+IMPORT "stdlib/math.src"
+IMPORT "stdlib/memory.src"
 
-#=========================================
-
-IMPORT "examples/stdlib/sdl.src"
-IMPORT "examples/stdlib/string.src"
-IMPORT "examples/stdlib/io.src"
+RGB8 :: TYPE
+  r: U8
+  g: U8
+  b: U8
+  padding: U8
 
 RGBA8 :: TYPE
   r: U8
@@ -24,29 +28,175 @@ Vertex :: TYPE
   normal: Vector3
   color: RGBA8
 
+Matrix4x4 :: TYPE
+  data: [16]F32
+
+matrix4x4_row_set :: (m: @Matrix4x4, index: S32, a: F32, b: F32, c: F32, d: F32)
+  [0 + index]m.data = a
+  [4 + index]m.data = b
+  [8 + index]m.data = c
+  [12 + index]m.data = d
+
+matrix4x4_identity :: () >> Matrix4x4
+  m: Matrix4x4
+  matrix4x4_row_set(@m, 1.0, 0.0, 0.0, 0.0)
+  matrix4x4_row_set(@m, 0.0, 1.0, 0.0, 0.0)
+  matrix4x4_row_set(@m, 0.0, 0.0, 1.0, 0.0)
+  matrix4x4_row_set(@m, 0.0, 0.0, 0.0, 1.0)
+  RETURN m
+
 Render_Context :: TYPE
   buffer_width: U32
   buffer_height: U32
   buffer_color: @U8
   buffer_depth: @U32
+  lastTime: U32
+  elapsedTime: F32
+  deltaTime: F32
 
-Indexed_Triangle_Mesh :: TYPE
+TriangleMeshIndexed :: TYPE
   vertices: @Vertex
   indices: @U32
-  vertex_count: U32
-  index_count: U32
+  vertexCount: U32
+  indexCount: U32
+
+Camera :: TYPE
+  position: Vector3
+
 
 render_context_initalize :: (ctx : @Render_Context, viewport_width: U32, viewport_height: U32)
   ctx.buffer_width = viewport_width
   ctx.buffer_height = viewport_height
+  ctx.lastTime = 0
+  ctx.elapsedTime = 0.0
+  ctx.deltaTime = 0.0
+
   required_memory: U64 = CAST(U64)((viewport_width * viewport_height) * 3)
   required_memory = required_memory + CAST(U64)(viewport_width * viewport_height * 4)
   memory: @U8 = malloc(required_memory)
   ctx.buffer_color = memory
-  ctx.buffer_depth = CAST(@U32)(CAST(U64)memory + CAST(U64)(CAST(S32)3 * (viewport_width * viewport_height)))
+  ctx.buffer_depth = CAST(@U32)(CAST(U64)memory + CAST(U64)((viewport_width * viewport_height) * 3))
 
 render_context_terminate :: (ctx : @Render_Context)
   free(ctx.buffer_color)
+
+framebufferClear :: (ctx : @Render_Context)
+  bufferSize: U32 = CAST(U32)(ctx.buffer_width * ctx.buffer_height * 3)
+  memset(ctx.buffer_color, 0, CAST(U64)bufferSize)
+
+
+vector3 :: (x: F32, y: F32, z: F32) >> Vector3
+  result: Vector3
+  result.x = x
+  result.y = y
+  result.z = z
+  RETURN result
+
+vertexPosNorm :: (pos: Vector3, n: Vector3) >> Vertex
+  result: Vertex
+  result.position = pos
+  result.normal = n
+  RETURN result
+
+allocateIndexedTriangleMesh :: (vertexCount: U32, indexCount: U32) >> @TriangleMeshIndexed
+  requiredMemory: U64 = 0
+  requiredMemory = requiredMemory + SIZEOF(TriangleMeshIndexed)
+  requiredMemory = memory_align(requiredMemory, 8)
+  requiredMemory = requiredMemory + SIZEOF(Vertex) * CAST(U64)vertexCount
+  requiredMemory = memory_align(requiredMemory, 8)
+  requiredMemory = requiredMemory + SIZEOF(U32) * CAST(U64)indexCount
+  memory: @U8 = memory_allocate(requiredMemory)
+  mesh: @TriangleMeshIndexed = CAST(@TriangleMeshIndexed)memory
+  mesh.vertices = CAST(@Vertex)memory_align(CAST(U64)memory + SIZEOF(TriangleMeshIndexed), 8)
+  mesh.indices = CAST(@U32)memory_align(CAST(U64)mesh.vertices + SIZEOF(Vertex) * CAST(U64)vertexCount, 8)
+  mesh.vertexCount = vertexCount
+  mesh.indexCount = indexCount
+  RETURN mesh
+
+
+createProceduralPlaneMesh :: () >> @TriangleMeshIndexed
+  mesh: @TriangleMeshIndexed = allocateIndexedTriangleMesh(4, 6)
+  mesh.vertices[0].position = vector3(0.0, 0.0, 0.0)
+  mesh.vertices[1].position = vector3(1.0, 0.0, 0.0)
+  mesh.vertices[2].position = vector3(1.0, 0.0, 1.0)
+  mesh.vertices[3].position = vector3(0.0, 0.0, 1.0)
+  mesh.vertices[0].normal = vector3(0.0, 1.0, 0.0)
+  mesh.vertices[1].normal = vector3(1.0, 1.0, 0.0)
+  mesh.vertices[2].normal = vector3(1.0, 1.0, 1.0)
+  mesh.vertices[3].normal = vector3(0.0, 1.0, 1.0)
+  mesh.indices[0] = 0 mesh.indices[1] = 1 mesh.indices[2] = 2
+  mesh.indices[3] = 0 mesh.indices[4] = 2 mesh.indices[5] = 3
+  RETURN mesh
+
+
+setFramebufferPixel :: (x: S32, y: S32, color: RGB8, ctx: @Render_Context) >> S32
+  IF CAST(U32)x < 0 || CAST(U32)x >= ctx.buffer_width
+    RETURN 0
+  IF CAST(U32)y < 0 || CAST(U32)y >= ctx.buffer_height
+    RETURN 0
+
+  index: U64 = CAST(U64)((CAST(U32)x + (CAST(U32)y * ctx.buffer_width)) * 3)
+  [index + 0]ctx.buffer_color = color.r
+  [index + 1]ctx.buffer_color = color.g
+  [index + 2]ctx.buffer_color = color.b
+  RETURN 1
+
+
+
+
+
+drawCircle :: (x: S32, y: S32, r: S32, ctx: @Render_Context)
+  xi: S32 = x - r
+  yi: S32 = y - r
+  color: RGB8
+  color.r = 0xFF
+  color.g = 0x00
+  color.b = 0xFF
+  WHILE xi <= (x + r)
+    WHILE yi <= (y + r)
+      IF (xi*xi) + (yi*yi) < (r*r)
+        setFramebufferPixel(xi, yi, color, ctx)
+      yi = yi + 1
+    xi = xi + 1
+
+
+drawRectangle :: (ctx: @Render_Context, x: S32, y: S32, w: S32, h: S32, color: RGB8)
+  xi: S32 = x
+  yi: S32 = y
+
+  WHILE yi < y + h
+    WHILE xi < x + w
+      setFramebufferPixel(xi, yi, color, ctx)
+      xi = xi + 1
+    yi = yi + 1
+    xi = x
+
+
+copy_framebuffer_to_sdl_texture :: (ctx: @Render_Context, texture: @SDL_Texture)
+  pixels: @U8 = 0
+  pitch: S32 = 0
+  SDL_LockTexture(texture, CAST(@SDL_Rect)0, @pixels, @pitch)
+  write_index: U64 = 0
+  read_index: U64 = 0
+  WHILE write_index < CAST(U64)(ctx.buffer_width * ctx.buffer_height * 4)
+    [write_index + 3]pixels = 255 #A
+    [write_index + 2]pixels = [read_index + 0]ctx.buffer_color #R
+    [write_index + 1]pixels = [read_index + 1]ctx.buffer_color #G
+    [write_index + 0]pixels = [read_index + 2]ctx.buffer_color #B
+    write_index = write_index + 4
+    read_index = read_index + 3
+  SDL_UnlockTexture(texture)
+
+
+renderScene :: (ctx: @Render_Context)
+  color: RGB8
+  color.r = 255
+  color.g = 0
+  color.b = 0
+  x: S32 = 400 + CAST(S32)(200.0 * sinf(ctx.elapsedTime))
+  y: S32 = 400 + CAST(S32)(100.0 * cosf(ctx.elapsedTime))
+  drawRectangle(ctx, x, y, 64, 64, color)
+
 
 main :: () >> S32
   BUFFER_WIDTH :: 1280
@@ -54,7 +204,6 @@ main :: () >> S32
 
   ctx: Render_Context
   render_context_initalize(@ctx, BUFFER_WIDTH, BUFFER_HEIGHT)
-  render_context_terminate(@ctx)
 
   SDL_Init(SDL_INIT_VIDEO)
   sdl_window: @SDL_Window = SDL_CreateWindow("SoftwareRasterizer", 0, 0, BUFFER_WIDTH, BUFFER_HEIGHT, SDL_WINDOW_OPENGL)
@@ -65,38 +214,39 @@ main :: () >> S32
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2)
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2)
   sdl_glcontext: @SDL_GLContext = SDL_GL_CreateContext(sdl_window)
-
   texture: @SDL_Texture = SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STREAMING, BUFFER_WIDTH, BUFFER_HEIGHT)
-  
 
-  is_running: S32 = 1
-  WHILE is_running == 1
-    SDL_RenderClear(sdl_renderer)
-    
-    pixels: @U8 = 0
-    pitch: S32 = 0
-    SDL_LockTexture(texture, CAST(@SDL_Rect)0, @pixels, @pitch)
-    
-    Print("fuck\n")
-    PrintU64Hex(CAST(U64)ctx.buffer_color)
-    
+  planeMesh: @TriangleMeshIndexed = createProceduralPlaneMesh()
 
-    index: U64 = 0
-    write_index: U64 = 0
-    read_index: U64 = 0
-    WHILE index < CAST(U64)(BUFFER_WIDTH * BUFFER_HEIGHT)
-      #Print("fuck\n")
-      [write_index + 2]pixels = [read_index + 0]ctx.buffer_color
-      
-      #[write_index + 1]pixels = [read_index + 1]ctx.buffer_color
-      #[write_index + 0]pixels = [read_index + 2]ctx.buffer_color
-      #read_index = read_index + 3
-      #write_index = write_index + 4
-      #index = index + 1
-    SDL_UnlockTexture(texture)
 
+  isRunning: S32 = 1
+  WHILE isRunning == 1
+    IF ctx.lastTime == 0
+      ctx.lastTime = SDL_GetTicks()
+      ctx.elapsedTime = 1.0 / 60.0
+      ctx.deltaTime = 1.0 / 60.0
+    ELSE
+      currentTicks: U32 = SDL_GetTicks()
+      deltaTicks: U32 = currentTicks - ctx.lastTime
+      ctx.lastTime = currentTicks
+      ctx.deltaTime = (CAST(F32)deltaTicks) / 1000.0
+      ctx.elapsedTime = ctx.elapsedTime + ctx.deltaTime
+
+    event: SDL_Event
+    event.type = 0
+    WHILE SDL_PollEvent(@event) == 1
+      IF event.type == SDL_QUIT
+        RETURN 0
+
+    framebufferClear(@ctx)
+    renderScene(@ctx)
+    copy_framebuffer_to_sdl_texture(@ctx, texture)
     SDL_RenderCopy(sdl_renderer, texture, CAST(@SDL_Rect)0, CAST(@SDL_Rect)0)
     SDL_RenderPresent(sdl_renderer)
     
-
+  render_context_terminate(@ctx)
   RETURN 0
+
+
+
+

@@ -23,9 +23,34 @@ struct StringReference {
   char *string;
 };
 
+//TODO Make a better robust version of this
+class TempStringBuilder {
+  char buffer[256];
+  int used;
+
+public:
+  TempStringBuilder() : used(0) {}
+
+  void append(const char *s) {
+    while (*s != 0) {
+      buffer[used++] = *s;
+      s++;
+    }
+  }
+
+  char *get() {
+    buffer[used] = 0;
+    return buffer;
+  }
+};
+
 MemoryBlockHeader *AllocateMemoryBlock(MemoryBlockHeader *parent, size_t blockSize);
 void InitalizeAllocator(PersistantBlockAllocator *allocator, size_t blockSize);
 uint8_t *Allocate(PersistantBlockAllocator *allocator, size_t size, size_t alignment = 8);
 StringReference AllocateString(PersistantBlockAllocator *allocator, const char *string, size_t length);
 
 bool Equals(StringReference a, const char *b, size_t length);
+bool Equals(StringReference a, StringReference b);
+bool MatchesCString(StringReference a, const char *b);
+
+bool string_index_of_char_from_back(char c, const char *s, int64_t l, size_t *result);

@@ -1,14 +1,17 @@
 
 struct SourceFile {
-  StringReference path;
+  StringReference absolutePath;
 };
 
 struct Compiler {
+  std::string currentWorkingDirectory;
+
   std::vector<SourceFile> sourceFiles;
   PersistantBlockAllocator stringAllocator;
   PersistantBlockAllocator astAllocator;
 
   Block *globalBlock;
+  TypeDeclaration *typeAny;
   TypeDeclaration *typeDeclU8;
   TypeDeclaration *typeDeclU16;
   TypeDeclaration *typeDeclU32;
@@ -25,4 +28,4 @@ struct Compiler {
 };
 
 void InitalizeCompiler(Compiler *compiler);
-uint32_t AddFileToSourceFileList(Compiler *compiler, const char *filepath, size_t length);
+uint32_t AddFileToSourceFileList(Compiler *compiler, uint16_t realitiveID, const char *filepath, size_t length);

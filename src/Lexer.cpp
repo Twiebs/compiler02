@@ -97,6 +97,7 @@ bool IsArithmeticToken(TokenType tokenType) {
 
 static void LexHexLiteral(Lexer *lex, Token *token) {
   assert(IsBase16Digit(*lex->current));
+  char *firstDigit = lex->current;
   int digitCount = 0;
   while (IsBase16Digit(*lex->current)) {
     digitCount += 1;
@@ -105,10 +106,10 @@ static void LexHexLiteral(Lexer *lex, Token *token) {
 
   uint64_t value = 0;
   uint64_t scalar = 1;
-  for (int i = 1; i < digitCount + 1; i++) {
-    int c = (int)*(lex->current - i);
+  for (int i = 0; i < digitCount; i++) {
+    int c = (int)firstDigit[digitCount - 1 - i];
     if (c <= '9') c -= '0';
-    else c -= 'A' + 10;
+    else c = (c - 'A') + 10;
     value += c * scalar;
     scalar *= 16;
   }
@@ -329,6 +330,7 @@ Token GetToken(Lexer *lex) {
     if (SetTokenTypeIfMatch(TokenType_KeywordForeign, LiteralAndLength("FOREIGN"))) return token;
     if (SetTokenTypeIfMatch(TokenType_KeywordCast, LiteralAndLength("CAST"))) return token;
     if (SetTokenTypeIfMatch(TokenType_KeywordImport, LiteralAndLength("IMPORT"))) return token;
+    if (SetTokenTypeIfMatch(TokenType_KeywordSizeOf, LiteralAndLength("SIZEOF"))) return token;
     token.type = TokenType_Identifier;
     return token;
   }
@@ -406,7 +408,7 @@ Token GetToken(Lexer *lex) {
   else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolDiv, LiteralAndLength("/"))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_SymbolMod, LiteralAndLength("%"))) return token;
 
-    else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalEqual, LiteralAndLength("=="))) return token;
+  else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalEqual, LiteralAndLength("=="))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalNotEqual, LiteralAndLength("!="))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalAnd, LiteralAndLength("&&"))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_LogicalOr, LiteralAndLength("||"))) return token;

@@ -52,6 +52,8 @@ enum ExpressionType {
 
   ExpressionType_MemberAccessExpression,
   ExpressionType_CastExpression,
+
+  ExpressionType_SizeOfExpression,
 };
 
 const char *ExpressionName[] = {
@@ -68,6 +70,8 @@ const char *ExpressionName[] = {
   "ExpressionType_BinaryOperation",
   "ExpressionType_MemberAccessExpression",
   "ExpressionType_CastExpression",
+
+  "ExpressionType_SizeOfExpression"
 };
 
 struct Statement {
@@ -215,6 +219,10 @@ struct VariableExpression : Expression {
 
 struct ConstantExpression : Expression {
   ConstantDeclaration *constant;
+};
+
+struct SizeOfExpression : Expression {
+  TypeInfo sizeOfTypeInfo;
 };
 
 struct IntegerLiteral : Expression {

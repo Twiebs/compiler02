@@ -1,3 +1,12 @@
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/TargetRegistry.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/Support/raw_os_ostream.h"
+
+#include "LLVMDebugInfo.hpp"
 
 void CodegenStatement(LLVMCodegenerator *cg, Statement *statement) {
   switch (statement->statementType) {
@@ -31,6 +40,8 @@ llvm::Value *CodegenExpression(LLVMCodegenerator *cg, Expression *expr) {
     case ExpressionType_BinaryOperation: return CodegenBinaryOperation(cg, (BinaryOperation *)expr);
     case ExpressionType_VariableExpression: return CodegenVariableExpression(cg, (VariableExpression *)expr);
     case ExpressionType_CallExpression: return CodegenCallExpression(cg, (CallExpression *)expr);
+
+    case ExpressionType_SizeOfExpression: return CodegenSizeOfExpression(cg, (SizeOfExpression *)expr);
     default: assert(false); break;
   };
 
@@ -65,7 +76,8 @@ void CodegenIfStatement(LLVMCodegenerator *cg, IfStatement *is) {
 
   cg->builder->SetInsertPoint(bodyBlock);
   CodegenBlock(cg, is);
-  cg->builder->CreateBr(exitBlock);
+  if (is->lastStatement->statementType != StatementType_ReturnStatement)
+    cg->builder->CreateBr(exitBlock);
 
   {
     llvm::BasicBlock *currentCond = nextBlock;
@@ -85,7 +97,8 @@ void CodegenIfStatement(LLVMCodegenerator *cg, IfStatement *is) {
 
       cg->builder->SetInsertPoint(body);
       CodegenBlock(cg, currentElse);
-      cg->builder->CreateBr(exitBlock);
+      if (currentElse->lastStatement->statementType != StatementType_ReturnStatement)
+        cg->builder->CreateBr(exitBlock);
       currentElse = currentElse->nextElse;
       currentCond = nextExit;
     }
@@ -122,12 +135,53 @@ void CodegenBlock(LLVMCodegenerator *cg, Block *block) {
   }
 }
 
-bool WriteNativeObject(llvm::Module *module) {
+bool WriteNativeObjectToFile(llvm::Module *module) {
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmPrinters();
+  llvm::InitializeAllAsmParsers();
+
+	llvm::PassRegistry* registry = llvm::PassRegistry::getPassRegistry();
+	llvm::initializeCore(*registry);
+	llvm::initializeCodeGen(*registry);
+	llvm::initializeLowerIntrinsicsPass(*registry);
+	llvm::initializeLoopStrengthReducePass(*registry);
+
   llvm::Triple triple;
   triple.setTriple(llvm::sys::getDefaultTargetTriple());
   std::string error;
+
   const llvm::Target *target = llvm::TargetRegistry::lookupTarget(triple.normalize(), error);
-  return false;
+  llvm::TargetOptions options = {};
+  llvm::CodeGenOpt::Level optimizationLevel = llvm::CodeGenOpt::Default;
+  //LLVM uses its own namespace in CommandFlags.h so we cant use these!
+  //std::string cpuStr = llvm::getCPUStr();
+  //std::string featureStr = llvm::getFeatureStr();
+  llvm::StringRef cpuStr = llvm::sys::getHostCPUName();
+  std::string featureStr = "";
+  llvm::Reloc::Model relocModel = llvm::Reloc::PIC_;
+  llvm::CodeModel::Model codeModel = llvm::CodeModel::Default;
+  llvm::TargetMachine *tm = target->createTargetMachine(triple.getTriple(), 
+    cpuStr, featureStr, options, relocModel, codeModel, optimizationLevel);
+
+  llvm::legacy::PassManager passManager;
+  llvm::PassManagerBuilder passBuilder;
+  passBuilder.OptLevel = 0;
+  passBuilder.SizeLevel = 0;
+  passBuilder.populateModulePassManager(passManager);
+
+  module->setDataLayout(tm->createDataLayout());
+  module->setTargetTriple(triple.getTriple());
+  llvm::TargetMachine::CodeGenFileType fileType = llvm::TargetMachine::CGFT_ObjectFile;
+  // TargetMachine::CGFT_AssemblyFile
+
+  std::error_code errorCode;
+  llvm::sys::fs::OpenFlags flags = (llvm::sys::fs::OpenFlags)0;
+  llvm::raw_fd_ostream llvmStream("test.o", errorCode, flags);
+  tm->addPassesToEmitFile(passManager, llvmStream, fileType);
+  passManager.run(*module);
+  llvmStream.flush();
+  return true;
 }
 
 void CodegenGlobalBlock(Compiler *compiler, Block *block) {
@@ -135,6 +189,7 @@ void CodegenGlobalBlock(Compiler *compiler, Block *block) {
   llvmCG.context = new llvm::LLVMContext();
   llvmCG.module = new llvm::Module("Compiler", *llvmCG.context);
   llvmCG.builder = new llvm::IRBuilder<>(*llvmCG.context);
+  llvmCG.dibuilder = new llvm::DIBuilder(*llvmCG.module);
   llvmCG.compiler = compiler;
 
   compiler->typeDeclU8->llvmType = llvm::Type::getInt8Ty(*llvmCG.context);
@@ -148,20 +203,25 @@ void CodegenGlobalBlock(Compiler *compiler, Block *block) {
   compiler->typeDeclF32->llvmType = llvm::Type::getFloatTy(*llvmCG.context);
   compiler->typeDeclF64->llvmType = llvm::Type::getDoubleTy(*llvmCG.context);
 
+  //InitalizeCompileUnitAndFiles(&llvmCG);
+
   CodegenBlock(&llvmCG, block);
 
-  {
+  llvm::raw_os_ostream stdoutStream(std::cout);
+  if (llvm::verifyModule(*llvmCG.module, &stdoutStream) == false) {
     llvmCG.module->dump();
+    WriteNativeObjectToFile(llvmCG.module);
+    system("objdump -M intel -d test.o > test.asm");
+    system("clang++ -O0 -lSDL2 test.o -o test");
+    system("objdump -M intel -d test > test.dump");
+  } else {
+    ReportError(compiler, "\n\nFAILED TO VERIFY LLVM MODULE");
+  }
+
+  {
     std::ofstream stream("test.ll");
     llvm::raw_os_ostream llvmStream(stream);
     llvmCG.module->print(llvmStream, nullptr);
-  }
-
-  
-  llvm::raw_os_ostream stdoutStream(std::cout);
-  if (llvm::verifyModule(*llvmCG.module, &stdoutStream) == false) {
-    system("llc -filetype=obj test.ll -o test.o");
-    system("clang++ -lSDL2 test.o -o test");
   }
 }
 
@@ -222,13 +282,24 @@ void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *pr
     llvm::BasicBlock *entryBlock = llvm::BasicBlock::Create(*cg->context, "entry", llvmFunction);
 
     cg->builder->SetInsertPoint(entryBlock);
-    VariableDeclaration *currentDecl = procDecl->params.firstParameter;
-    for (auto iter = llvmFunction->arg_begin(); iter != llvmFunction->arg_end(); iter++) {
-      llvm::Value *value = (llvm::Value *)&(*iter);
-      llvm::Value *arraySize = cg->builder->getInt32(currentDecl->typeInfo.arraySize);
-      currentDecl->llvmAlloca = cg->builder->CreateAlloca(GetLLVMType(cg, &currentDecl->typeInfo), arraySize);
-      cg->builder->CreateStore(value, currentDecl->llvmAlloca);
-      currentDecl = (VariableDeclaration *)currentDecl->next;
+
+    { //Allocate storage for params on stack and store values
+      VariableDeclaration *currentDecl = procDecl->params.firstParameter;
+      for (auto iter = llvmFunction->arg_begin(); iter != llvmFunction->arg_end(); iter++) {
+        llvm::Value *arraySize = nullptr;
+        TempStringBuilder sb;
+        sb.append(currentDecl->identifier->name.string);
+        sb.append(".stack_addr");
+        currentDecl->llvmAlloca = cg->builder->CreateAlloca(GetLLVMType(cg, &currentDecl->typeInfo), arraySize, sb.get());
+        currentDecl = (VariableDeclaration *)currentDecl->next;
+      }
+
+      currentDecl = procDecl->params.firstParameter;
+      for (auto iter = llvmFunction->arg_begin(); iter != llvmFunction->arg_end(); iter++) {
+        llvm::Value *value = (llvm::Value *)&(*iter);
+        cg->builder->CreateStore(value, currentDecl->llvmAlloca);
+        currentDecl = (VariableDeclaration *)currentDecl->next;
+      }
     }
 
 
@@ -245,8 +316,12 @@ void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *pr
 
 void CodegenVariableDeclaration(LLVMCodegenerator *cg, VariableDeclaration *varDecl) {
   llvm::Type *llvmType = GetLLVMType(cg, &varDecl->typeInfo);
-  llvm::Value *arraySize = cg->builder->getInt64(varDecl->typeInfo.arraySize);
-  varDecl->llvmAlloca = cg->builder->CreateAlloca(llvmType, arraySize, varDecl->identifier->name.string);
+  llvm::Value *arraySize = nullptr;
+        
+  TempStringBuilder sb;
+  sb.append(varDecl->identifier->name.string);
+  sb.append(".stack_addr");
+  varDecl->llvmAlloca = cg->builder->CreateAlloca(llvmType, arraySize, sb.get());
   if (varDecl->initalExpression != nullptr) {
     llvm::Value *llvmValue = CodegenExpression(cg, varDecl->initalExpression);
     llvm::Value *store = cg->builder->CreateStore(llvmValue, varDecl->llvmAlloca);
@@ -288,9 +363,10 @@ void CodegenVariableAssignment(LLVMCodegenerator *cg, VariableAssignment *varAss
   if (varAssignment->memberAccess.indexCount > 0)
     storePtr = CodegenMemberAccess(cg, storePtr, &varAssignment->varDecl->typeInfo, &varAssignment->memberAccess);
   if (varAssignment->subscriptExpression != nullptr) {
-    if (varAssignment->memberAccess.indexCount == 0) {
+    //if (varAssignment->memberAccess.indexCount == 0) {
       storePtr = cg->builder->CreateLoad(storePtr);
-    }
+    //r
+
     llvm::Value *subscriptValue = CodegenExpression(cg, varAssignment->subscriptExpression);
     storePtr = cg->builder->CreateGEP(storePtr, subscriptValue);
   }
@@ -424,21 +500,57 @@ llvm::Value *CodgenMemberAccessExpression(LLVMCodegenerator *cg, MemberAccessExp
 llvm::Value *CodegenBinaryOperation(LLVMCodegenerator *cg, BinaryOperation *binop) {
   llvm::Value *lhsValue = CodegenExpression(cg, binop->lhs);
   llvm::Value *rhsValue = CodegenExpression(cg, binop->rhs);
-  assert(lhsValue != nullptr);
-  assert(rhsValue != nullptr);
+  assert(lhsValue != nullptr && rhsValue != nullptr);
+  if (binop->binopToken == TokenType_LogicalOr || 
+      binop->binopToken == TokenType_LogicalAnd) {
+    assert(lhsValue->getType() == cg->builder->getInt1Ty());
+    assert(rhsValue->getType() == cg->builder->getInt1Ty());
+    llvm::Value *lhsIsTrue = cg->builder->CreateICmpEQ(lhsValue, cg->builder->getInt1(1));
+    llvm::Value *rhsIsTrue = cg->builder->CreateICmpEQ(rhsValue, cg->builder->getInt1(1));
+    llvm::Value *result = nullptr;
+    if (binop->binopToken == TokenType_LogicalOr) {
+      result = cg->builder->CreateOr(lhsValue, rhsValue);
+    } else { 
+      result = cg->builder->CreateAnd(lhsValue, rhsValue);
+    }
+    return result;
+  }
 
   if (IsBitwiseBinOp(binop->binopToken) || IsArithmeticToken(binop->binopToken)) {
     llvm::Instruction::BinaryOps opcode = (llvm::Instruction::BinaryOps)0;
     if (binop->binopToken == TokenType_SymbolAdd) {
-      opcode = llvm::Instruction::Add;
+      if (IsFloatType(binop->typeInfo.type, cg->compiler)) {
+        opcode = llvm::Instruction::FAdd;
+      } else {
+        opcode = llvm::Instruction::Add;
+      }
     } else if (binop->binopToken == TokenType_SymbolSub) {
-      opcode = llvm::Instruction::Sub;
+      if (IsFloatType(binop->typeInfo.type, cg->compiler)) {
+        opcode = llvm::Instruction::FSub;
+      } else {
+        opcode = llvm::Instruction::Sub;
+      }
     } else if (binop->binopToken == TokenType_SymbolMul) {
-      opcode = llvm::Instruction::Mul;
+      if (IsFloatType(binop->typeInfo.type, cg->compiler)) {
+        opcode = llvm::Instruction::FMul;
+      } else {
+        opcode = llvm::Instruction::Mul;
+      }
     } else if (binop->binopToken == TokenType_SymbolDiv) {
-      opcode = llvm::Instruction::SDiv;
+      if (IsFloatType(binop->typeInfo.type, cg->compiler)) {
+        opcode = llvm::Instruction::FDiv;
+      } else {
+        if (IsUnsignedIntegerType(binop->typeInfo.type, cg->compiler)) {
+          opcode = llvm::Instruction::UDiv;
+        } else {
+          opcode = llvm::Instruction::SDiv;
+        }
+      }
     } else if (binop->binopToken == TokenType_SymbolMod) {
       opcode = llvm::Instruction::SRem;
+      if (IsUnsignedIntegerType(binop->lhs->typeInfo.type, cg->compiler)) { //TODO does not hande pointers!
+        opcode = llvm::Instruction::URem;
+      }
     } else if (binop->binopToken == TokenType_BitwiseLeftShift) {
       opcode = llvm::Instruction::Shl;
     } else if (binop->binopToken == TokenType_BitwiseRightShift) {
@@ -452,17 +564,15 @@ llvm::Value *CodegenBinaryOperation(LLVMCodegenerator *cg, BinaryOperation *bino
     }
 
     assert(opcode != 0);
-    llvm::Value *result = cg->builder->CreateBinOp(opcode, lhsValue, rhsValue, "binop");
+    llvm::Value *result = cg->builder->CreateBinOp(opcode, lhsValue, rhsValue);
     return result;
   }
-
 
   if (IsFloatType(binop->typeInfo.type, cg->compiler)) {
     llvm::CmpInst::Predicate pred = llvm::CmpInst::FCMP_FALSE;
     assert(false);
     return nullptr;
   }
-
 
   llvm::CmpInst::Predicate pred = (llvm::CmpInst::Predicate)0xFF;
   if (binop->binopToken == TokenType_LogicalEqual) {
@@ -493,7 +603,10 @@ llvm::Value *CodegenBinaryOperation(LLVMCodegenerator *cg, BinaryOperation *bino
 }
 
 llvm::Value *CodegenVariableExpression(LLVMCodegenerator *cg, VariableExpression *varExpr) {
-  llvm::Value *load = cg->builder->CreateLoad(varExpr->varDecl->llvmAlloca);
+  TempStringBuilder sb;
+  sb.append(varExpr->varDecl->identifier->name.string);
+  sb.append(".load");
+  llvm::Value *load = cg->builder->CreateLoad(varExpr->varDecl->llvmAlloca, sb.get());
   return load;
 }
 
@@ -585,4 +698,10 @@ llvm::Value *CodegenUnaryOperation(LLVMCodegenerator *cg, UnaryOperation *unaryO
 
   assert(false);
   return nullptr;
+}
+
+llvm::Value *CodegenSizeOfExpression(LLVMCodegenerator *cg, SizeOfExpression *expr) {
+  const llvm::DataLayout& dataLayout = cg->module->getDataLayout();
+  uint64_t size = dataLayout.getTypeSizeInBits(expr->typeInfo.type->llvmType);
+  return cg->builder->getInt64(size);
 }

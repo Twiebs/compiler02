@@ -40,6 +40,7 @@ bool ValidateExpression(Compiler *c, Expression *expr) {
     case ExpressionType_IntegerLiteral:
     case ExpressionType_FloatLiteral:
     case ExpressionType_StringLiteral:
+    case ExpressionType_SizeOfExpression:
       return true;
 
     default: assert(false);
@@ -50,6 +51,11 @@ bool ValidateExpression(Compiler *c, Expression *expr) {
 }
 
 bool ValidateCallExpression(Compiler *c, CallExpression *call) {
+  if (call->procedure->returnTypeInfo.type == nullptr) {
+    ReportErrorC(c, call->location, "Call to procedure " << call->procedure->identifier <<
+    " is being used as an expression but the return type is Void\n");
+    return false;
+  }
   return ValidateParameterInvokation(c, &call->params); 
 }
 
@@ -100,12 +106,9 @@ bool ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params
     while (current != nullptr) {
       assert(currentVar != nullptr);
       if (AttemptTypeCoercionIfRequired(compiler, &currentVar->typeInfo, current) == false) {
-        ReportErrorT(compiler, current->location, "In parameter invokation '",
-          TERMINAL_COLOR_CYAN, params, TERMINAL_COLOR_DEFAULT,
-          "': \n   Expression '", TERMINAL_COLOR_CYAN, current, TERMINAL_COLOR_DEFAULT,
-          "' of type '", TERMINAL_COLOR_CYAN, &current->typeInfo, TERMINAL_COLOR_DEFAULT, 
-          "' does not match parameter declaration",
-          TERMINAL_COLOR_CYAN, paramDecl, TERMINAL_COLOR_DEFAULT, "\n");
+        ReportErrorC(compiler, current->location, "In parameter invokation '" <<
+          params << "': \n   Expression '" << current << "' of type '" << &current->typeInfo <<
+          "' does not match parameter declaration" << paramDecl << "\n");
         return false;
       } 
       current = current->next;
@@ -174,24 +177,15 @@ static void PropagateTypeInfoToChildren(Expression *e, TypeInfo *ti) {
 }
 
 bool ValidateBinaryOperation(Compiler *compiler, BinaryOperation *binOp) {
+  assert(binOp->typeInfo.type == nullptr); //Type is not resolved yet
   if (ValidateExpression(compiler, binOp->lhs) == false) return false;
   if (ValidateExpression(compiler, binOp->rhs) == false) return false;
 
   bool result = AttemptTypeCoercionIfRequired(compiler, &binOp->lhs->typeInfo, binOp->rhs);
   if (result == false) {
-
-#if 0
-    ReportErrorT(compiler, binOp->location, "Binary Operand Type Mismatch:\n  LHS expression '",
-      TERMINAL_COLOR_BLUE, binOp->lhs, TERMINAL_COLOR_DEFAULT, "' of type '",
-      TERMINAL_COLOR_LIGHTGREEN, &binOp->lhs->typeInfo, TERMINAL_COLOR_DEFAULT,
-      "' does not match RHS expression '", TERMINAL_COLOR_BLUE, binOp->rhs, TERMINAL_COLOR_DEFAULT,
-      "' of type '", TERMINAL_COLOR_LIGHTGREEN, &binOp->rhs->typeInfo, TERMINAL_COLOR_DEFAULT, "'\n");
-#endif
-
     ReportErrorC(compiler, binOp->location, "Binary Operand Type Mismatch:\n  LHS expression '" <<
       binOp->lhs << "' of type '" << &binOp->lhs->typeInfo << "' does not match RHS expression '" <<
       binOp->rhs << "' of type '" << &binOp->rhs->typeInfo << "'\n");
-
   } 
 
   if (IsBitwiseBinOp(binOp->binopToken)) {
@@ -227,8 +221,9 @@ bool ValidateVariableAssignment(Compiler *compiler, VariableAssignment *varAssig
   if (AttemptTypeCoercionIfRequired(compiler, &varAssign->typeInfo, varAssign->expression) == false) {
     Identifier *varIdent = varAssign->varDecl->identifier;
     Identifier *typeIdent = varAssign->expression->typeInfo.type->identifier;
-    ReportError(compiler, varAssign->location, "Cannot assign Variable(%s) to Expression(%s)",
-      varIdent->name.string, typeIdent->name.string);
+    ReportErrorC(compiler, varAssign->location, "Cannot assign expression " <<
+      varAssign->expression << " of type " << &varAssign->expression->typeInfo <<
+      " to variable " << varAssign << " of type " << &varAssign->typeInfo << "\n");
     return false;
   }
   return true;
@@ -314,6 +309,10 @@ bool ValidateBlock(Compiler *compiler, Block *block) {
 }
 
 bool ValidateUnaryOperation(Compiler *compiler, UnaryOperation *unaryOp) {
+  ValidateExpression(compiler, unaryOp->expression);
+  if (unaryOp->typeInfo.type == nullptr)
+    unaryOp->typeInfo = unaryOp->expression->typeInfo;
+
   if (unaryOp->unaryToken == TokenType_ArrayOpen) {
     TypeInfo *exprType = &unaryOp->expression->typeInfo;
     if (exprType->indirectionLevel == 0 && exprType->arraySize == 0) {

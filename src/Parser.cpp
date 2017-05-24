@@ -16,7 +16,7 @@ Statement *CreateStatementInternal(Parser *p, StatementType type, SourceLocation
   if (location.fileID != INVALID_FILE_ID) {
     SourceFile *sourceFile = &p->compiler->sourceFiles[location.fileID];
     LogVerbose(p, "StatementID: %d, [%.*s:%d:%d] Creating Statement(%s)", (int)p->internalStatementCounter, 
-      (int)sourceFile->path.length, sourceFile->path.string, (int)location.lineNumber, (int)location.columnNumber, StatementName[type]);
+      (int)sourceFile->absolutePath.length, sourceFile->absolutePath.string, (int)location.lineNumber, (int)location.columnNumber, StatementName[type]);
   } else {
     LogVerbose(p, "StatementID: %d, [INTERNAL] Creating Statement(%s)", (int)p->internalStatementCounter, StatementName[type]);
   }
@@ -319,6 +319,29 @@ Expression *ParsePrimaryExpression(Parser *p) {
       return ParseCastExpression(p);
     } break;
 
+    case TokenType_KeywordSizeOf: {
+      SizeOfExpression *e = CreateExpression(SizeOfExpression, p->token.location, p);
+      e->typeInfo.type = p->compiler->typeDeclU64;
+      NextToken(p); // Eat TokenType_KeywordSizeOf
+      if (p->token.type != TokenType_ParenOpen) {
+        ReportError(p, p->token.location, "Expected copenlose paren for sizeof expr");
+        return nullptr;
+      }
+
+      NextToken(p); //Eat TokenType_ParenOpen
+      if (ParseTypeInfo(p, &e->sizeOfTypeInfo) == false) {
+        return nullptr;
+      }
+
+      if (p->token.type != TokenType_ParenClose) {
+        ReportError(p, p->token.location, "Expected close paren for sizeof expr");
+        return nullptr;
+      }
+
+      NextToken(p); //Eat TokenType_ParenClose
+      return e;
+    } break;
+
     case TokenType_Integer: {
       IntegerLiteral *expr = CreateExpression(IntegerLiteral, p->token.location, p);
       expr->unsignedValue = p->token.unsignedValue;
@@ -364,9 +387,10 @@ Expression *ParsePrimaryExpression(Parser *p) {
       return result;
     } break;
 
-
-
-    default: assert(false);
+    default: {
+      ReportError(p, p->token.location, "Unexpected token");
+      return nullptr;
+    } break;
   }
 
   assert(false);
@@ -648,6 +672,7 @@ ConstantDeclaration *ParseConstantDeclaration(Parser *p, Identifier *ident) {
   result->identifier = ident;
   ident->declaration = result;
   result->expression = ParseExpression(p);
+  if (result->expression == nullptr) return nullptr;
   result->typeInfo = result->expression->typeInfo;
   return result;
 }
@@ -843,10 +868,12 @@ Statement *ParseStatement(Parser *p) {
         return nullptr;
       }
 
-      uint32_t fileID = AddFileToSourceFileList(p->compiler, p->token.text, p->token.length);
+      uint32_t fileID = AddFileToSourceFileList(p->compiler, p->fileID, p->token.text, p->token.length);
       NextToken(p); //Eat TokenType_KeywordString
-      if (ParseEntireFile(p->compiler, fileID) == false) {
-        return nullptr;
+      if (fileID != INVALID_FILE_ID) {
+        if (ParseEntireFile(p->compiler, fileID) == false) {
+            return nullptr;
+        }
       }
 
       return ParseStatement(p);
@@ -893,7 +920,7 @@ void DebugPrintAllTokens(Parser *p) {
 
 bool ParseEntireFile(Compiler *compiler, uint32_t fileID) {
   SourceFile *sourceFile = &compiler->sourceFiles[fileID];
-  FILE *file = fopen(sourceFile->path.string, "r");
+  FILE *file = fopen(sourceFile->absolutePath.string, "r");
   if (file == nullptr) return false;
   fseek(file, 0, SEEK_END);
   size_t fileSize = ftell(file);
@@ -910,9 +937,10 @@ bool ParseEntireFile(Compiler *compiler, uint32_t fileID) {
   parser.stringAllocator = &compiler->stringAllocator;
   parser.logLevel = LogLevel_Info;
   parser.currentBlock = compiler->globalBlock;
+  parser.fileID = fileID;
   InitalizeLexer(&parser.lexer, fileID, fileBuffer);
   NextToken(&parser); //Get the first token in the buffer
-  LogInfo(&parser, "Parsing file: %s", sourceFile->path.string);
+  LogInfo(&parser, "Parsing file: %s", sourceFile->absolutePath.string);
   ParseCurrentBlock(&parser);
   free(fileBuffer);
 

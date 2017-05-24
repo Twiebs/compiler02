@@ -48,3 +48,31 @@ bool Equals(StringReference a, const char *b, size_t length) {
   }
   return true;
 }
+
+bool MatchesCString(StringReference a, const char *b) {
+  size_t index = 0;
+  while (b[index] != 0) {
+    if (a.string[index] != b[index]) return false;
+    index += 1;
+  }
+  return true;
+}
+
+bool Equals(StringReference a, StringReference b) {
+  if (a.length != b.length) return false;
+  for (size_t i = 0; i < a.length; i++) {
+    if (a.string[i] != b.string[i]) return false;
+  }
+  return true;
+}
+
+bool string_index_of_char_from_back(char c, const char *s, int64_t l, size_t *result) {
+  int64_t i = l - 1;
+  for(; i >= 0; i--) {
+    if (s[i] == c) {
+      *result = i;
+      return true;
+    }
+  }
+  return false;
+}

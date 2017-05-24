@@ -6,6 +6,8 @@ struct Parser {
   PersistantBlockAllocator *astAllocator;
   PersistantBlockAllocator *stringAllocator;
 
+  uint16_t fileID;
+
   LogLevel logLevel;
   uint32_t internalStatementCounter;
   uint32_t internalExpressionCounter;

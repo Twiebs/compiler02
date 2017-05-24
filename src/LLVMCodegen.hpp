@@ -1,6 +1,10 @@
 
-#include "llvm/Support/TargetRegistry.h"
-#include "llvm/Target/TargetMachine.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/DIBuilder.h"
+
+#include <unordered_map>
 
 struct LLVMCodegenerator {
   llvm::LLVMContext *context;
@@ -8,6 +12,21 @@ struct LLVMCodegenerator {
   llvm::IRBuilder<> *builder;
   Compiler *compiler;
   llvm::Function *currentFunction;
+
+  //Debug Info Creation
+  bool emitDebugInfo;
+  llvm::DIBuilder *dibuilder;
+  llvm::DICompileUnit *debugCompileUnit;
+  std::vector<llvm::DIFile *> diFiles;
+  llvm::DIScope *currentDebugScope;
+  std::unordered_map<char *, llvm::DIType *> diTypeMap;
+
+  //Debug Info helper procedures
+  llvm::DIType *GetDIType(TypeInfo *type);
+
+  //Procedures for creating dwarf debug information
+  void CreateDebugInfoForProcedure(ProcedureDeclaration *procedure);
+
 };
 
 void CodegenGlobalBlock(Compiler *compiler, Block *block);
@@ -43,3 +62,4 @@ llvm::Value *CodegenCastExpression(LLVMCodegenerator *cg, CastExpression *castEx
 llvm::Value *CodegenUnaryOperation(LLVMCodegenerator *cg, UnaryOperation *unaryOp);
 llvm::Value *CodegenBinaryOperation(LLVMCodegenerator *cg, BinaryOperation *binOp);
 
+llvm::Value *CodegenSizeOfExpression(LLVMCodegenerator *cg, SizeOfExpression *expr);

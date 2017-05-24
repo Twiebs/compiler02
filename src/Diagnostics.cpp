@@ -2,7 +2,7 @@
 void ErrorReportBegin(Compiler *c, SourceLocation& location) {
   std::ostream& stream = std::cout;
   SourceFile *file = &c->sourceFiles[location.fileID];
-  stream << "\033[31;1m" << "[" << file->path.string << ":" <<
+  stream << "\033[31;1m" << "[" << file->absolutePath.string << ":" <<
     location.lineNumber << ":" << location.columnNumber << "] " << "\033[0m";
   c->errorCount++;;
 }
@@ -30,7 +30,7 @@ void ReportError(Parser *p, const char *fmt, ...) {
 void ReportError(Compiler *compiler, const SourceLocation& location, const char *fmt, ...) {
   SourceFile *file = &compiler->sourceFiles[location.fileID];
   printf("\033[31;1m");
-  printf("[%.*s:%d:%d] ", (int)file->path.length, file->path.string, (int)location.lineNumber, (int)location.columnNumber);
+  printf("[%.*s:%d:%d] ", (int)file->absolutePath.length, file->absolutePath.string, (int)location.lineNumber, (int)location.columnNumber);
   va_list args;
   va_start(args, fmt);
   vprintf(fmt, args);
@@ -42,7 +42,7 @@ void ReportError(Parser *p, const SourceLocation& location, const char *fmt, ...
   Compiler *compiler = p->compiler;
   SourceFile *file = &compiler->sourceFiles[location.fileID];
   printf("\033[31;1m");
-  printf("[%.*s:%d:%d] ", (int)file->path.length, file->path.string, (int)location.lineNumber, (int)location.columnNumber);
+  printf("[%.*s:%d:%d] ", (int)file->absolutePath.length, file->absolutePath.string, (int)location.lineNumber, (int)location.columnNumber);
   va_list args;
   va_start(args, fmt);
   vprintf(fmt, args);
@@ -336,15 +336,83 @@ void PrintBinaryOperation(BinaryOperation *binOp) {
 
 //=================================================
 
+void CodePrinter::setColor(TerminalColor color) {
+  *stream << TerminalColorStrings[(int)color];
+}
+
 CodePrinter& CodePrinter::operator<<(const char *string) {
   *stream << string;
   return *this;
 }
 
-CodePrinter& CodePrinter::operator<<(Expression *expression) {
-  PrintExpression(expression);
+CodePrinter& CodePrinter::operator<<(Identifier *ident) {
+  *stream << ident->name.string;
   return *this;
 }
+
+CodePrinter& CodePrinter::operator<<(Expression *expression) {
+  switch (expression->expressionType) {
+    case ExpressionType_IntegerLiteral: PrintIntegerLiteral((IntegerLiteral *)expression); break;
+    case ExpressionType_FloatLiteral: PrintFloatLiteral((FloatLiteral *)expression); break;
+    case ExpressionType_StringLiteral: PrintStringLiteral((StringLiteral *)expression); break;
+
+    case ExpressionType_VariableExpression: PrintVariableExpression((VariableExpression *)expression); break;
+    case ExpressionType_ConstantExpression: PrintConstantExpression((ConstantExpression *)expression, std::cout); break;
+    case ExpressionType_CallExpression: PrintCallExpression((CallExpression *)expression); break;
+    case ExpressionType_MemberAccessExpression: PrintMemberAccessExpression((MemberAccessExpression *)expression); break;
+
+    case ExpressionType_UnaryOperation: PrintUnaryOperation((UnaryOperation *)expression); break;
+    case ExpressionType_BinaryOperation: PrintBinaryOperation((BinaryOperation *)expression); break;
+    case ExpressionType_CastExpression: *this << (CastExpression *)expression; break;
+    case ExpressionType_SizeOfExpression: *this << (SizeOfExpression *)expression; break;
+
+    default: {
+      assert(false);
+      printf("UNIMPLEMENTED PRINT EXPRESSION");
+    } break;
+  };
+  return *this;
+}
+
+
+
+CodePrinter& CodePrinter::operator<<(VariableAssignment *varAssignment) {
+  Identifier *ident = varAssignment->varDecl->identifier;
+  *stream << ident->name.string;
+  TypeDeclaration *currentType = (TypeDeclaration *)varAssignment->varDecl->typeInfo.type;
+  for (size_t i = 0; i < varAssignment->memberAccess.indexCount; i++) {
+    VariableDeclaration *currentMember = (VariableDeclaration *)currentType->firstStatement;
+    for (size_t j = 0; j < varAssignment->memberAccess.indices[i]; j++)
+      currentMember = (VariableDeclaration *)currentMember->next;
+    Identifier *memberIdent = currentMember->identifier;
+    *stream << "." << memberIdent->name.string;
+    currentType = (TypeDeclaration *)currentMember->typeInfo.type;
+  }
+  return *this;
+}
+
+CodePrinter& CodePrinter::operator<<(CastExpression *cast) {
+  setColor(keywordColor);
+  *stream << "CAST";
+  setColor(defaultColor);
+  *stream << "(";
+  *this << &cast->typeInfo;
+  *stream << ")";
+  *this << cast->expression;
+  return *this;
+}
+
+CodePrinter& CodePrinter::operator<<(SizeOfExpression *expression) {
+  setColor(keywordColor);
+  *stream << "SIZEOF";
+  setColor(defaultColor);
+  *stream << "(";
+  *this << &expression->sizeOfTypeInfo;
+  *stream << ")";
+  return *this;
+}
+
+//================================================================
 
 CodePrinter& CodePrinter::operator<<(ParameterInvokation *params) {
   PrintParameterInvokation(params);
@@ -357,10 +425,15 @@ CodePrinter& CodePrinter::operator<<(ParameterDeclaration *params) {
 }
 
 CodePrinter& CodePrinter::operator<<(TypeInfo *typeInfo) {
-  *stream << TerminalColorStrings[typeColor];
+  *stream << TerminalColorStrings[(int)typeColor];
   Identifier *typeIdent = typeInfo->type->identifier;
   for (size_t i = 0; i < typeInfo->indirectionLevel; i++) *stream << "@";
   if (typeInfo->arraySize > 0) *stream << "[" << typeInfo->arraySize << "]";
   *stream << typeIdent->name.string;
+  *stream << TerminalColorStrings[(int)defaultColor];
+  return *this;
+}
+
+CodePrinter& CodePrinter::operator<<(TypeMemberAccess *memberAccess) {
   return *this;
 }
