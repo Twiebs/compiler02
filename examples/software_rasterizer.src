@@ -274,6 +274,24 @@ createProceduralSquarePlaneMesh :: (cellsPerEdgeCount: S32, halfWidth: F32) >> @
   RETURN mesh
 
 
+generatePlaneMeshData :: (normal: Vector3, vertices: @Vector3, indices: @U32, vertexStride: U64, indexStride: U64)
+
+
+
+createProceduralCubeMesh :: () >> @TriangleMesh
+  mesh: @TriangleMesh = allocateTriangleMesh(24, 36)
+  mesh.vertices[0].position = make_vector3(0.0, 0.0, 0.0)
+  mesh.vertices[1].position = make_vector3(1.0, 0.0, 0.0)
+  mesh.vertices[2].position = make_vector3(1.0, 0.0, 1.0)
+  mesh.vertices[3].position = make_vector3(0.0, 0.0, 1.0)
+  mesh.vertices[0].normal = make_vector3(0.0, 1.0, 0.0)
+  mesh.vertices[1].normal = make_vector3(0.0, 1.0, 0.0)
+  mesh.vertices[2].normal = make_vector3(0.0, 1.0, 0.0)
+  mesh.vertices[3].normal = make_vector3(0.0, 1.0, 0.0)
+  mesh.indices[0] = 0 mesh.indices[1] = 1 mesh.indices[2] = 2
+  mesh.indices[3] = 0 mesh.indices[4] = 2 mesh.indices[5] = 3
+
+
 calculateBarycentricCoordinates :: (a: Vector3, b: Vector3, c: Vector3, p: Vector3) >> Vector3
   baryCoords: Vector3
   ab: Vector3 = sub_vector3_vector3(b, a)
@@ -299,7 +317,6 @@ topOrLeftEdgeBias :: (a: Vector2i, b: Vector2i) >> S32
   RETURN bias
 
 
-
 drawTriangle :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, a: TriangleVertex, b: TriangleVertex, c: TriangleVertex)
   localSpaceA: Vector4 = make_vector4_from_vector3(a.position, 1.0)
   localSpaceB: Vector4 = make_vector4_from_vector3(b.position, 1.0)
@@ -307,23 +324,16 @@ drawTriangle :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, a: TriangleVertex, b
   clipSpaceA: Vector4 = mul_matrix4x4_vector4(mvpMatrix, localSpaceA)
   clipSpaceB: Vector4 = mul_matrix4x4_vector4(mvpMatrix, localSpaceB)
   clipSpaceC: Vector4 = mul_matrix4x4_vector4(mvpMatrix, localSpaceC)
-  clipSpaceA = div_vector4_float32(clipSpaceA, clipSpaceA.w)
-  clipSpaceB = div_vector4_float32(clipSpaceB, clipSpaceB.w)
-  clipSpaceC = div_vector4_float32(clipSpaceC, clipSpaceC.w)
-  viewportSpaceA: Vector3 = make_vector3_from_vector4(mul_matrix4x4_vector4(ctx.viewportMatrix, clipSpaceA))
-  viewportSpaceB: Vector3 = make_vector3_from_vector4(mul_matrix4x4_vector4(ctx.viewportMatrix, clipSpaceB))
-  viewportSpaceC: Vector3 = make_vector3_from_vector4(mul_matrix4x4_vector4(ctx.viewportMatrix, clipSpaceC))
+  ndcSpaceA: Vector4 = div_vector4_float32(clipSpaceA, clipSpaceA.w)
+  ndcSpaceB: Vector4 = div_vector4_float32(clipSpaceB, clipSpaceB.w)
+  ndcSpaceC: Vector4 = div_vector4_float32(clipSpaceC, clipSpaceC.w)
+  viewportSpaceA: Vector3 = make_vector3_from_vector4(mul_matrix4x4_vector4(ctx.viewportMatrix, ndcSpaceA))
+  viewportSpaceB: Vector3 = make_vector3_from_vector4(mul_matrix4x4_vector4(ctx.viewportMatrix, ndcSpaceB))
+  viewportSpaceC: Vector3 = make_vector3_from_vector4(mul_matrix4x4_vector4(ctx.viewportMatrix, ndcSpaceC))
 
-  SUB_PIXEL_STEP :: 1
-  SUB_PIXEL_MASK :: 0
-  subPixelBufferWidth: S32 = CAST(S32)(ctx.bufferWidth * SUB_PIXEL_STEP)
-  subPixelBufferHeight: S32 = CAST(S32)(ctx.bufferHeight * SUB_PIXEL_STEP) 
-  subPixelSpaceA: Vector2i = make_vector2i(CAST(S32)(viewportSpaceA.x * CAST(F32)SUB_PIXEL_STEP), CAST(S32)(viewportSpaceA.y * CAST(F32)SUB_PIXEL_STEP))
-  subPixelSpaceB: Vector2i = make_vector2i(CAST(S32)(viewportSpaceB.x * CAST(F32)SUB_PIXEL_STEP), CAST(S32)(viewportSpaceB.y * CAST(F32)SUB_PIXEL_STEP))
-  subPixelSpaceC: Vector2i = make_vector2i(CAST(S32)(viewportSpaceC.x * CAST(F32)SUB_PIXEL_STEP), CAST(S32)(viewportSpaceC.y * CAST(F32)SUB_PIXEL_STEP))
-  bias0: S32 = topOrLeftEdgeBias(subPixelSpaceB, subPixelSpaceC)
-  bias1: S32 = topOrLeftEdgeBias(subPixelSpaceC, subPixelSpaceA)
-  bias2: S32 = topOrLeftEdgeBias(subPixelSpaceC, subPixelSpaceA)
+  subPixelSpaceA: Vector2i = make_vector2i(CAST(S32)viewportSpaceA.x, CAST(S32)viewportSpaceA.y)
+  subPixelSpaceB: Vector2i = make_vector2i(CAST(S32)viewportSpaceB.x, CAST(S32)viewportSpaceB.y)
+  subPixelSpaceC: Vector2i = make_vector2i(CAST(S32)viewportSpaceC.x, CAST(S32)viewportSpaceC.y)
 
   # Clips our draw range to the union of the triangles bounding box and buffer bounds
   minX: S32 = min_int32(subPixelSpaceA.x, min_int32(subPixelSpaceB.x, subPixelSpaceC.x))
@@ -332,28 +342,31 @@ drawTriangle :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, a: TriangleVertex, b
   maxY: S32 = max_int32(subPixelSpaceA.y, max_int32(subPixelSpaceB.y, subPixelSpaceC.y))
   minX = max_int32(0, minX)
   minY = max_int32(0, minY)
-  maxX = min_int32(subPixelBufferWidth - 1, maxX)
-  maxY = min_int32(subPixelBufferHeight - 1, maxY)
-  minX = (minX + SUB_PIXEL_MASK) & (~SUB_PIXEL_MASK)
-  minY = (minY + SUB_PIXEL_MASK) & (~SUB_PIXEL_MASK)
+  maxX = min_int32(CAST(S32)ctx.bufferWidth - 1, maxX)
+  maxY = min_int32(CAST(S32)ctx.bufferHeight - 1, maxY)
 
   currentSubPixel: Vector2i = make_vector2i(minX, minY)
   WHILE currentSubPixel.y < maxY
+    currentSubPixel.x = minX
     WHILE currentSubPixel.x < maxX
-      w0: S32 = orient2D(subPixelSpaceB, subPixelSpaceC, currentSubPixel) + bias0
-      w1: S32 = orient2D(subPixelSpaceC, subPixelSpaceA, currentSubPixel) + bias1
-      w2: S32 = orient2D(subPixelSpaceA, subPixelSpaceB, currentSubPixel) + bias2
+      w0: S32 = orient2D(subPixelSpaceB, subPixelSpaceC, currentSubPixel)
+      w1: S32 = orient2D(subPixelSpaceC, subPixelSpaceA, currentSubPixel)
+      w2: S32 = orient2D(subPixelSpaceA, subPixelSpaceB, currentSubPixel)
 
       IF w0 >= 0 && w1 >= 0 && w2 >= 0
         color: RGB8 = make_rgb8_from_rgba8(a.color)
-        pixelX: S32 = currentSubPixel.x / SUB_PIXEL_STEP
-        pixelY: S32 = currentSubPixel.y / SUB_PIXEL_STEP
+        pixelX: S32 = currentSubPixel.x
+        pixelY: S32 = currentSubPixel.y
         index: U64 = CAST(U64)((CAST(U32)pixelX + (CAST(U32)pixelY * ctx.bufferWidth)) * 3)
+
+
         ctx.bufferColor[index + 0] = color.r
         ctx.bufferColor[index + 1] = color.g
         ctx.bufferColor[index + 2] = color.b
-      currentSubPixel.x = currentSubPixel.x + SUB_PIXEL_STEP
-    currentSubPixel.y = currentSubPixel.y + SUB_PIXEL_STEP
+      currentSubPixel.x = currentSubPixel.x + 1
+    currentSubPixel.y = currentSubPixel.y + 1
+
+
 
 
 drawTriangleMesh :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, mesh: @TriangleMesh)
@@ -391,7 +404,8 @@ renderScene :: (ctx: @RenderContext, camera: @Camera, mesh: @TriangleMesh)
   modelMatrix: Matrix4x4 = matrix4x4_translate(0.0, 0.0, 0.0)
   viewMatrix: Matrix4x4 = matrix4x4_look_at_direction(camera.position, camera.front)
   projectionMatrix: Matrix4x4 = matrix4x4_perspective(camera.fieldOfView, camera.viewportWidth, camera.viewportHeight, 0.1, 100.0)
-  mvpMatrix: Matrix4x4 = mul_matrix4x4_matrix4x4(projectionMatrix, mul_matrix4x4_matrix4x4(viewMatrix, modelMatrix))
+  modelViewMatrix: Matrix4x4 = mul_matrix4x4_matrix4x4(viewMatrix, modelMatrix)
+  mvpMatrix: Matrix4x4 = mul_matrix4x4_matrix4x4(projectionMatrix, modelViewMatrix)
   drawTriangleMesh(ctx, mvpMatrix, mesh)
 
 

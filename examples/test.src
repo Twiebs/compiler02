@@ -1,11 +1,8 @@
 
+add :: (a: S32, b: S32)(result: S32)
+  result = a + b
 
 
-main :: () >> S32
-  counter: S32 = 0
-  WHILE counter < 1000
-    woofer: U64 = 0
-    woofer = 37
-    counter = counter + 1
-
-  RETURN 0
+main :: ()(errorCode: S32)
+  foo: S32 = add(2, 4)
+  errorCode = 0
