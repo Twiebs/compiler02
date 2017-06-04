@@ -33,10 +33,9 @@ bool ValidateExpression(Compiler *c, Expression *expr) {
     case ExpressionType_BinaryOperation: return ValidateBinaryOperation(c, (BinaryOperation *)expr);
     case ExpressionType_CastExpression: return ValidateCastExpression(c, (CastExpression *)expr);
     case ExpressionType_CallExpression: return ValidateCallExpression(c, (CallExpression *)expr);
+    case ExpressionType_VariableExpression: ValidateVariableExpression(c, (VariableExpression *)expr); break;
 
     case ExpressionType_ConstantExpression:
-    case ExpressionType_MemberAccessExpression:
-    case ExpressionType_VariableExpression:
     case ExpressionType_IntegerLiteral:
     case ExpressionType_FloatLiteral:
     case ExpressionType_StringLiteral:
@@ -46,8 +45,7 @@ bool ValidateExpression(Compiler *c, Expression *expr) {
     default: assert(false);
   }
 
-  assert(false);
-  return false;
+  return true;
 }
 
 bool ValidateCallExpression(Compiler *c, CallExpression *call) {
@@ -56,7 +54,9 @@ bool ValidateCallExpression(Compiler *c, CallExpression *call) {
     " is being used as an expression but the return type is Void\n");
     return false;
   }
-  return ValidateParameterInvokation(c, &call->params); 
+
+  ValidateParameterInvokation(c, &call->params, call->location); 
+  return true;
 }
 
 bool ValidateIfStatement(Compiler *c, IfStatement *is) {
@@ -85,16 +85,49 @@ bool ValidateReturnStatement(Compiler *compiler, ReturnStatement *returnStatemen
   return ValidateExpression(compiler, returnStatement->returnValue);
 }
 
-bool ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params) {
+
+TypeInfo ValidateVariableAccess(Compiler *compiler, SourceLocation location, VariableAccess *va) {
+  VariableDeclaration *var = va->variable;
+  for (int i = 0; i < va->accessCount; i++) {
+    if (va->subscriptExpressions[i] != nullptr) {
+      //TODO Make sure this thing is not a string, boolean, etc
+      ValidateExpression(compiler, va->subscriptExpressions[i]);
+
+      //TODO Figure out where we store location
+      if (var->typeInfo.indirectionLevel == 0 && var->typeInfo.arraySize == 0) {
+        ReportErrorC(compiler, location, "Cannot derefrence non pointer type " <<
+          &var->typeInfo << "\n");
+      }
+
+      if (var->typeInfo.indirectionLevel > 2 && i != va->accessCount - 1) {
+        ReportErrorC(compiler, location, "Pointer has to many levels of indirection to deref in the middle of a var access");
+      }
+    }
+
+    if (i + 1 < va->accessCount) {
+      var = GetVariableAtIndex(&var->typeInfo, va->indices[i + 1]);
+    }
+  }
+
+  TypeInfo finalType = var->typeInfo;
+  if (va->subscriptExpressions[va->accessCount - 1]) {
+    if (finalType.indirectionLevel > 0) finalType.indirectionLevel--;
+    else finalType.arraySize = 0;
+  }
+
+  return finalType;
+}
+
+void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params, SourceLocation& loc) {
   if (params->parameterExpressionCount != params->parameterList->parameterCount) {
-    ReportError(compiler, "parameter count does not match");
-    return false;
+    ReportErrorC(compiler, loc, "ParameterInvokation: " << params << " parameter count does not match " <<
+      " the count of parameter declaration " << params->parameterList << "\n");
   }
   
   {
     Expression *current = params->firstParameterExpression;
     while (current != nullptr) {
-      if (ValidateExpression(compiler, current) == false) return false;
+      ValidateExpression(compiler, current);
       current = current->next;
     }
   }
@@ -108,19 +141,19 @@ bool ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params
       if (AttemptTypeCoercionIfRequired(compiler, &currentVar->typeInfo, current) == false) {
         ReportErrorC(compiler, current->location, "In parameter invokation '" <<
           params << "': \n   Expression '" << current << "' of type '" << &current->typeInfo <<
-          "' does not match parameter declaration" << paramDecl << "\n");
-        return false;
+          "' does not match parameter '" << currentVar->identifier->name.string << "' of type ' " <<
+          &currentVar->typeInfo << " in parameter declaration " << paramDecl << "\n");
       } 
       current = current->next;
       currentVar = (VariableDeclaration *)currentVar->next;
     }
   }
-
-  return true;
 }
 
 bool ValidateCallStatement(Compiler *compiler, CallStatement *call) {
-  return ValidateParameterInvokation(compiler, &call->params);
+  //TODO better error
+  ValidateParameterInvokation(compiler, &call->params, call->location);
+  return true;
 }
 
 //0: not a liteal
@@ -176,12 +209,23 @@ static void PropagateTypeInfoToChildren(Expression *e, TypeInfo *ti) {
   e->typeInfo = *ti;
 }
 
-bool ValidateBinaryOperation(Compiler *compiler, BinaryOperation *binOp) {
-  assert(binOp->typeInfo.type == nullptr); //Type is not resolved yet
-  if (ValidateExpression(compiler, binOp->lhs) == false) return false;
-  if (ValidateExpression(compiler, binOp->rhs) == false) return false;
+bool AttemptTypeCoercionIfRequiredExpr(Compiler *compiler, Expression *a, Expression *b) {
+  Expression *primary = a;
+  Expression *secondary = b;
+  if (a->expressionType == ExpressionType_IntegerLiteral) {
+    primary = b;
+    secondary = a;
+  }
 
-  bool result = AttemptTypeCoercionIfRequired(compiler, &binOp->lhs->typeInfo, binOp->rhs);
+  return AttemptTypeCoercionIfRequired(compiler, &primary->typeInfo, secondary);
+}
+
+bool ValidateBinaryOperation(Compiler *compiler, BinaryOperation *binOp) {
+  assert(binOp->typeInfo.type == nullptr); //Type should not be resolved yet
+  ValidateExpression(compiler, binOp->lhs);
+  ValidateExpression(compiler, binOp->rhs);
+
+  bool result = AttemptTypeCoercionIfRequiredExpr(compiler, binOp->lhs, binOp->rhs);
   if (result == false) {
     ReportErrorC(compiler, binOp->location, "Binary Operand Type Mismatch:\n  LHS expression '" <<
       binOp->lhs << "' of type '" << &binOp->lhs->typeInfo << "' does not match RHS expression '" <<
@@ -207,23 +251,15 @@ bool ValidateCastExpression(Compiler *compiler, CastExpression *cast) {
 }
 
 bool ValidateVariableAssignment(Compiler *compiler, VariableAssignment *varAssign) {
-  if (varAssign->subscriptExpression != nullptr) {
-    if (varAssign->typeInfo.indirectionLevel == 0) {
-      ReportError(compiler, varAssign->location, "Cannot dereference a non pointer type");
-      return false;
-    }
-
-    if (ValidateExpression(compiler, varAssign->subscriptExpression) == false) return false;
-    varAssign->typeInfo.indirectionLevel -= 1;
-  }
-
+  TypeInfo type = ValidateVariableAccess(compiler, varAssign->location, &varAssign->variableAccess);
+  varAssign->typeInfo = type;
   if (ValidateExpression(compiler, varAssign->expression) == false) return false;
-  if (AttemptTypeCoercionIfRequired(compiler, &varAssign->typeInfo, varAssign->expression) == false) {
-    Identifier *varIdent = varAssign->varDecl->identifier;
+  if (AttemptTypeCoercionIfRequired(compiler, &type, varAssign->expression) == false) {
+    Identifier *varIdent = varAssign->variableAccess.variable->identifier;
     Identifier *typeIdent = varAssign->expression->typeInfo.type->identifier;
     ReportErrorC(compiler, varAssign->location, "Cannot assign expression " <<
       varAssign->expression << " of type " << &varAssign->expression->typeInfo <<
-      " to variable " << varAssign << " of type " << &varAssign->typeInfo << "\n");
+      " to variable " << &varAssign->variableAccess << " of type " << &varAssign->typeInfo << "\n");
     return false;
   }
   return true;
@@ -287,12 +323,13 @@ bool ValidateVariableDeclaration(Compiler *compiler, VariableDeclaration *varDec
     return false;
   }
 
-  if (AttemptTypeCoercionIfRequired(compiler, &varDecl->typeInfo, varDecl->initalExpression)) return true;
-  Identifier *expected = varDecl->typeInfo.type->identifier;
-  Identifier *actual = varDecl->initalExpression->typeInfo.type->identifier;
-  ReportError(compiler, varDecl->location, "Variable Declaration Type mismatch: Expected expression of type '%s'."
-    "  Actual type was '%s'", expected->name.string, actual->name.string);
-  return false;
+  if (AttemptTypeCoercionIfRequired(compiler, &varDecl->typeInfo, varDecl->initalExpression) == false) {
+    ReportErrorC(compiler, varDecl->location, "Variable Declaration Type mismatch: Expected expression of type " <<
+      &varDecl->typeInfo << " Actual type was " << &varDecl->initalExpression->typeInfo << "\n");
+    return false;
+  }
+
+  return true;
 }
 
 bool ValidateProcedureDeclaration(Compiler *compiler, ProcedureDeclaration *procDecl) {
@@ -308,44 +345,25 @@ bool ValidateBlock(Compiler *compiler, Block *block) {
   return true;
 }
 
+void ValidateVariableExpression(Compiler *compiler, VariableExpression *expr) {
+  TypeInfo t = ValidateVariableAccess(compiler, expr->location, &expr->variableAccess);
+  expr->typeInfo = t;
+}
+
 bool ValidateUnaryOperation(Compiler *compiler, UnaryOperation *unaryOp) {
   ValidateExpression(compiler, unaryOp->expression);
-  if (unaryOp->typeInfo.type == nullptr)
-    unaryOp->typeInfo = unaryOp->expression->typeInfo;
-
-  if (unaryOp->unaryToken == TokenType_ArrayOpen) {
-    TypeInfo *exprType = &unaryOp->expression->typeInfo;
-    if (exprType->indirectionLevel == 0 && exprType->arraySize == 0) {
-      ReportError(compiler, unaryOp->location, "Cannot subscript into non ptr type");
-      return false;
-    }
-
-    if (ValidateExpression(compiler, unaryOp->subscriptExpression) == false) return false;
-    if (!IsIntegerType(unaryOp->subscriptExpression->typeInfo.type, compiler)) {
-      ReportError(compiler, "Array subscript must be integer type");
-      return false;
-    }
-
-    unaryOp->typeInfo.indirectionLevel -= 1;
-    return true;
+  unaryOp->typeInfo = unaryOp->expression->typeInfo;
+  if (unaryOp->unaryToken == TokenType_SymbolAddress) {
+    unaryOp->typeInfo.indirectionLevel += unaryOp->unaryCount;
   }
 
-  if (unaryOp->unaryToken == TokenType_ArrayOpen || unaryOp->unaryToken == TokenType_SymbolAddress) {
+  if (unaryOp->unaryToken == TokenType_SymbolAddress) {
     if (unaryOp->expression->expressionType == ExpressionType_IntegerLiteral ||
         unaryOp->expression->expressionType == ExpressionType_FloatLiteral ||
         unaryOp->expression->expressionType == ExpressionType_StringLiteral) {
       ReportError(compiler, unaryOp->location, "cannot take address of literal");
       return false;
     }
-  }
-
-  if (unaryOp->unaryToken == TokenType_SymbolValue) {
-    TypeInfo *exprType = &unaryOp->expression->typeInfo;
-    if (exprType->indirectionLevel == 0 && exprType->arraySize == 0) {
-      ReportError(compiler, unaryOp->location, "Cannot derefrence non pointer or array type");
-      return false;
-    }
-    unaryOp->typeInfo.indirectionLevel -= unaryOp->unaryCount;
   }
 
   if (unaryOp->unaryToken == TokenType_LogicalNot ||
@@ -359,3 +377,4 @@ bool ValidateUnaryOperation(Compiler *compiler, UnaryOperation *unaryOp) {
   
   return true;
 }
+

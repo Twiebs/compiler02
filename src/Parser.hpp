@@ -30,7 +30,9 @@ Identifier *CreateIdentifier(Parser *p, Token identToken);
 TypeDeclaration *CreateBuiltinType(Parser *p, SourceLocation location, const char *name);
 
 Expression *ParsePrimaryExpression(Parser *p);
-bool ParseTypeMemberAccess(Parser *p, VariableDeclaration *varDecl, TypeMemberAccess *memberAccess, TypeInfo *outTypeInfo);
+
+
+bool ParseVariableAccess(Parser *p, VariableAccess *memberAccess, TypeInfo *outTypeInfo);
 
 
 Statement *ParseStatement(Parser *p);

@@ -80,26 +80,29 @@ Block *ParseCurrentBlock(Parser *p) {
   return p->currentBlock;
 }
 
-//=======================================================================
-//When this procedure is called the parser should store the
-//first TokenType_SymbolDot token that appeared when parsing
-//a type member access in either a assignment statement or
-//when parsing a primary expression.  memberAccess is an out
-//variable that will store the indices needed to walk to the
-//correct member.
 
-bool ParseTypeMemberAccess(Parser *p, VariableDeclaration *varDecl, TypeMemberAccess *memberAccess, TypeInfo *outTypeInfo) {
-  assert(p->token.type == TokenType_SymbolDot);
-  assert(varDecl != nullptr);
-  assert(varDecl->typeInfo.type != nullptr);
+bool ParseVariableAccess(Parser *p, VariableAccess *variableAccess, TypeInfo *outTypeInfo) {
+  assert(variableAccess->variable != nullptr);
+  assert(variableAccess->variable->typeInfo.type != nullptr);
 
-  uint32_t memberIndices[256] = {};
-  size_t memberAccessDepth = 0;
-  TypeInfo *currentType = &varDecl->typeInfo;
-  while (p->token.type == TokenType_SymbolDot && memberAccessDepth < 256) {
+  uint32_t accessCount = 1; //Zero contains the variable itself
+  uint32_t accessIndices[256] = {};
+  Expression *subscriptExpressions[256] = {};
+  //Parser has already consumed variable name
+  if (p->token.type == TokenType_ArrayOpen) {
+    NextToken(p); //Eat ArrayOpen
+    subscriptExpressions[0] = ParseExpression(p);
+    if (p->token.type != TokenType_ArrayClose) {
+      ReportError(p, p->token.location, "Expected subscript close ']'");
+      return false;
+    }
+    NextToken(p); //Eat ArrayClose
+  }
+
+  TypeInfo *currentType = &variableAccess->variable->typeInfo;
+  while (p->token.type == TokenType_SymbolDot && accessCount < 256) {
     if (currentType->type->statementType != StatementType_TypeDeclaration) {
-      ReportError(p, p->token.location, "Cannot access field '%.*s'",
-      (int)p->token.length, p->token.text);
+      ReportError(p, p->token.location, "Cannot access field '%.*s'", (int)p->token.length, p->token.text);
       return false;
     }
 
@@ -109,7 +112,7 @@ bool ParseTypeMemberAccess(Parser *p, VariableDeclaration *varDecl, TypeMemberAc
       return false;
     }
 
-    Identifier *memberIdent = FindIdentifierInType(currentType->type, p->token, memberIndices + memberAccessDepth);
+    Identifier *memberIdent = FindIdentifierInType(currentType->type, p->token, &accessIndices[accessCount]);
     if (memberIdent == nullptr) {
       Identifier *typeIdent = currentType->type->identifier;
       ReportError(p, p->token.location, "Type '%.*s' has no member named '%.*s'",
@@ -118,16 +121,28 @@ bool ParseTypeMemberAccess(Parser *p, VariableDeclaration *varDecl, TypeMemberAc
     } else {
       VariableDeclaration *memberDecl = (VariableDeclaration *)memberIdent->declaration;
       currentType = &memberDecl->typeInfo;
-      memberAccessDepth += 1;
+
       NextToken(p);
     }
+
+    if (p->token.type == TokenType_ArrayOpen) {
+      NextToken(p); //Eat ArrayOpen
+      subscriptExpressions[accessCount] = ParseExpression(p);
+      if (p->token.type != TokenType_ArrayClose) {
+        ReportError(p, p->token.location, "Expected subscript close ']'");
+        return false;
+      }
+      NextToken(p); //Eat ArrayClose
+    }
+
+    accessCount += 1;
   }
 
   //User must be emitting generated source code into a source file
   //by some procedural method, or they need to seek mental health care.  
-  if (memberAccessDepth >= 256) {
+  if (accessCount >= 256) {
     //NOTE Sarcasm intended
-    ReportError(p, "Hello user!  It looks like you are auto-generating code and "
+    ReportError(p, "Hello user!  It looks like you might be auto-generating code and "
       "feeding it to the compiler.  If this is not the case just know that it "
       "is okay; you don't have to be alone anymore'  There are profesional "
       "mental health services availiable and there is no shame in seeking them out "
@@ -137,10 +152,11 @@ bool ParseTypeMemberAccess(Parser *p, VariableDeclaration *varDecl, TypeMemberAc
     return false;
   }
 
-  if (outTypeInfo != nullptr) *outTypeInfo = *currentType;
-  memberAccess->indices = (uint32_t *)Allocate(p->astAllocator, sizeof(uint32_t)*memberAccessDepth, 4);
-  memberAccess->indexCount = memberAccessDepth;
-  memcpy(memberAccess->indices, memberIndices, sizeof(uint32_t)*memberAccess->indexCount);
+  variableAccess->indices = (uint32_t *)Allocate(p->astAllocator, sizeof(uint32_t) * accessCount, 4);
+  variableAccess->subscriptExpressions = (Expression **)Allocate(p->astAllocator, sizeof(Expression *) * accessCount, 8);
+  variableAccess->accessCount = accessCount;
+  memcpy(variableAccess->indices, accessIndices, sizeof(uint32_t) * variableAccess->accessCount);
+  memcpy(variableAccess->subscriptExpressions, subscriptExpressions, sizeof(Expression *) * accessCount);
   return true;
 }
 
@@ -211,7 +227,6 @@ Expression *ParsePrimaryExpression(Parser *p) {
     case TokenType_SymbolValue:
     case TokenType_LogicalNot:
     case TokenType_BitwiseNot:
-    case TokenType_ArrayOpen: 
     case TokenType_SymbolSub: {
       UnaryOperation *unaryOp = CreateExpression(UnaryOperation, p->token.location, p);
       unaryOp->unaryToken = p->token.type;
@@ -221,22 +236,8 @@ Expression *ParsePrimaryExpression(Parser *p) {
         unaryOp->unaryCount += 1;
       }
 
-      if (unaryOp->unaryToken == TokenType_ArrayOpen) {
-        unaryOp->subscriptExpression = ParseExpression(p);
-        if (unaryOp->subscriptExpression == nullptr) {
-          ReportError(p, unaryOp->location, "Invalid subscript expression");
-          return nullptr;
-        }
-
-        assert(p->token.type == TokenType_ArrayClose);
-        NextToken(p); //Eat TokenType_ArrayClose
-      }
-
       unaryOp->expression = ParsePrimaryExpression(p);
       if (unaryOp->expression == nullptr) return nullptr;
-      unaryOp->typeInfo = unaryOp->expression->typeInfo;
-      if (unaryOp->unaryToken == TokenType_SymbolAddress)
-        unaryOp->typeInfo.indirectionLevel += unaryOp->unaryCount;
       return unaryOp;
     } break;
 
@@ -297,18 +298,10 @@ Expression *ParsePrimaryExpression(Parser *p) {
         }
 
         assert(varDecl->typeInfo.type != nullptr);
-
-        if (p->token.type == TokenType_SymbolDot) {
-          MemberAccessExpression *expr = CreateExpression(MemberAccessExpression, p->token.location, p);
-          expr->varDecl = varDecl;
-          ParseTypeMemberAccess(p, varDecl, &expr->memberAccess, &expr->typeInfo);
-          return expr;
-        } else {
-          VariableExpression *expr = CreateExpression(VariableExpression, p->token.location, p);
-          expr->varDecl = varDecl;
-          expr->typeInfo = varDecl->typeInfo;
-          return expr;
-        }
+        VariableExpression *expr = CreateExpression(VariableExpression, p->token.location, p);
+        expr->variableAccess.variable = varDecl;
+        ParseVariableAccess(p,  &expr->variableAccess, &expr->typeInfo);
+        return expr;
       }
 
       assert(false);
@@ -521,6 +514,7 @@ bool ParseTypeInfo(Parser *p, TypeInfo *typeInfo) {
     return false;
   }
 
+  //TODO show location of the declaration
   if (typeIdent->declaration->statementType != StatementType_TypeDeclaration) {
     ReportError(p, p->token.location, "%.*s does not name a type", 
       (int)typeIdent->name.length, typeIdent->name.string);
@@ -640,27 +634,23 @@ VariableAssignment *ParseVariableAssignment(Parser *p, Token identToken) {
   if (ident == nullptr) {
     ReportError(p, identToken.location, "Variable '%.*s' not found in scope",
       (int)identToken.length, identToken.text);
+      return nullptr;
   } else {
     assert(ident->declaration != nullptr);
-    varAssignment->varDecl = (VariableDeclaration *)ident->declaration;
-    if (varAssignment->varDecl->statementType != StatementType_VariableDeclaration) {
+    varAssignment->variableAccess.variable = (VariableDeclaration *)ident->declaration;
+    if (varAssignment->variableAccess.variable->statementType != StatementType_VariableDeclaration) {
       ReportError(p, identToken.location, "%.*s does not name a variable",
         (int)identToken.length, identToken.text);
     }
 
-    if (p->token.type == TokenType_SymbolDot) {
-      bool sucuess = ParseTypeMemberAccess(p, varAssignment->varDecl, &varAssignment->memberAccess, &varAssignment->typeInfo);
-      if (sucuess == false) return nullptr;
-    } else {
-      varAssignment->typeInfo = varAssignment->varDecl->typeInfo;
-    }
+    ParseVariableAccess(p, &varAssignment->variableAccess, &varAssignment->typeInfo);
 
     if (p->token.type != TokenType_SymbolEquals) {
       ReportError(p, p->token.location, "Expected '='");
       return nullptr;
     }
 
-    NextToken(p);
+    NextToken(p); //Eat Equals
     varAssignment->expression = ParseExpression(p);
   }
 
@@ -687,6 +677,7 @@ Statement *ParseIdentiferStatement(Parser *p) {
       NextToken(p); //Eat single colon
       Identifier *ident = FindIdentifier(p->currentBlock, identToken);
       if (ident != nullptr) {
+        //TODO WAY BETTER ERROR FOR THIS
         ReportError(p, "Cannot declare new identifier %.*s", identToken.length, identToken.text);
         return nullptr;
       }
@@ -717,10 +708,7 @@ Statement *ParseIdentiferStatement(Parser *p) {
     } break;
 
 
-    case TokenType_SymbolEquals:
-    case TokenType_SymbolDot: {
-      return ParseVariableAssignment(p, identToken);
-    } break;
+
 
     case TokenType_ParenOpen: {
       Identifier *ident = FindIdentifier(p->currentBlock, identToken);
@@ -751,7 +739,14 @@ Statement *ParseIdentiferStatement(Parser *p) {
       return nullptr;
     } break;
 
+    case TokenType_ArrayOpen:
+    case TokenType_SymbolEquals:
+    case TokenType_SymbolDot: {
+      return ParseVariableAssignment(p, identToken);
+    } break;
+
     default: {
+      
       ReportError(p, p->token.location, "Unexptected token after identifier");
       return nullptr;
     };
@@ -832,31 +827,6 @@ IfStatement *ParseIfStatement(Parser *p) {
 
 Statement *ParseStatement(Parser *p) {
   switch (p->token.type) {
-    case TokenType_SymbolValue:
-    case TokenType_ArrayOpen: {
-      Expression *subscriptExpr = nullptr;
-      if (p->token.type == TokenType_ArrayOpen) {
-        NextToken(p); //Eat TokenType_ArrayOpen
-        subscriptExpr = ParseExpression(p);
-        if (p->token.type != TokenType_ArrayClose) {
-          ReportError(p, p->token.location, "Expected subscript close");
-          return nullptr;
-        }
-        NextToken(p); //Eat TokenType_ArrayClose
-      }
-
-      if (p->token.type != TokenType_Identifier) {
-        ReportError(p, p->token.location, "Expected identifier after subscript");
-        return nullptr;
-      }
-
-      Token identToken = p->token;
-      NextToken(p); //Eat Identifier
-      VariableAssignment *var = ParseVariableAssignment(p,identToken);
-      var->subscriptExpression = subscriptExpr;
-      return var;
-    } break;
-
     case TokenType_Identifier: {
       return ParseIdentiferStatement(p);
     } break;

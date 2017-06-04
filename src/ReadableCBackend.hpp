@@ -14,7 +14,7 @@ void CodeGenTypeNameAndPointers(TypeInfo *typeInfo, std::ostream& stream);
 void CodeGenTypeArraySize(TypeInfo *typeInfo, std::ostream& stream);
 void CodeGenParameterDeclaration(ParameterDeclaration *params, std::ostream& stream);
 void CodeGenParameterInvokation(ParameterInvokation *params, std::ostream& stream);
-void CodeGenMemberAccess(TypeMemberAccess *ma, std::ostream& stream);
+void CodeGenVariableAccess(VariableAccess *va, std::ostream& stream);
 
 //Compound Statements
 void CodeGenBlock(Block *block, std::ostream& stream, int blockDepth);
@@ -39,6 +39,5 @@ void CodeGenConstantExpression(ConstantExpression *ce, std::ostream& s);
 void CodeGenCallExpression(CallExpression *callExpr, std::ostream& s);
 void CodeGenBinaryOperation(BinaryOperation *binOp, std::ostream& s);
 void CodeGenUnaryOperation(UnaryOperation *unaryOp, std::ostream& s);
-void CodeGenMemberAccessExpression(MemberAccessExpression *memberAccessExpr, std::ostream& s);
 void CodeGenCastExpression(CastExpression *castExpr, std::ostream& s);
 void CodeGenSizeOfExpression(SizeOfExpression *expression, std::ostream& stream);

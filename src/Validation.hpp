@@ -14,11 +14,17 @@ bool ValidateReturnStatement(Compiler *compiler, ReturnStatement *returnStatemen
 bool ValidateWhileStatement(Compiler *c, WhileStatement *ws);
 bool ValidateIfStatement(Compiler *c, IfStatement *is);
 
+//Validate Expressions
 bool ValidateExpression(Compiler *compiler, Expression *expr);
+void ValidateVariableExpression(Compiler *compiler, VariableExpression *expr);
 bool ValidateUnaryOperation(Compiler *compiler, UnaryOperation *unaryOp);
 bool ValidateBinaryOperation(Compiler *compiler, BinaryOperation *binOp);
 bool ValidateCastExpression(Compiler *compiler, CastExpression *cast);
 bool ValidateCallExpression(Compiler *c, CallExpression *call);
 
-bool ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params);
+//Validation of Non AST Helper structs
+void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params, SourceLocation& loc);
+TypeInfo ValidateVariableAccess(Compiler *compiler, SourceLocation location, VariableAccess *va);
+
+//Internal procedures
 bool AttemptTypeCoercionIfRequired(Compiler *compiler, TypeInfo *requestedType, Expression *expr);

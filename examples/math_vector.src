@@ -1,0 +1,135 @@
+
+IMPORT "stdlib/math.src"
+
+Vector2i :: TYPE
+  x: S32
+  y: S32
+
+
+Vector3 :: TYPE
+  x: F32
+  y: F32
+  z: F32
+
+
+Vector4 :: TYPE
+  x: F32
+  y: F32
+  z: F32
+  w: F32
+
+#Make Procedures
+#=====================================================
+
+make_vector3 :: (x: F32, y: F32, z: F32) >> Vector3
+  result: Vector3
+  result.x = x
+  result.y = y
+  result.z = z
+  RETURN result
+
+
+make_vector4_from_vector3 :: (v: Vector3, w: F32) >> Vector4
+  r: Vector4
+  r.x = v.x
+  r.y = v.y
+  r.z = v.z
+  r.w = w
+  RETURN r
+
+
+make_vector3_from_vector4 :: (v: Vector4) >> Vector3
+  r: Vector3
+  r.x = v.x
+  r.y = v.y
+  r.z = v.z
+  RETURN r
+
+
+make_vector2i :: (x: S32, y: S32) >> Vector2i
+  result: Vector2i
+  result.x = x
+  result.y = y
+  RETURN result
+
+#Arithmatic Procedures
+#=====================================================
+
+add_vector3_vector3 :: (a: Vector3, b: Vector3) >> Vector3
+  result: Vector3
+  result.x = a.x + b.x
+  result.y = a.y + b.y
+  result.z = a.z + b.z
+  RETURN result
+
+
+sub_vector3_vector3 :: (a: Vector3, b: Vector3) >> Vector3
+  result: Vector3
+  result.x = a.x - b.x
+  result.y = a.y - b.y
+  result.z = a.z - b.z
+  RETURN result
+
+
+mul_vector3_float32 :: (a: Vector3, b: F32) >> Vector3
+  result: Vector3
+  result.x = a.x * b
+  result.y = a.y * b
+  result.z = a.z * b
+  RETURN result
+
+
+sub_vector2i_vector2i :: (a: Vector2i, b: Vector2i) >> Vector2i
+  result: Vector2i
+  result.x = a.x - b.x
+  result.y = a.y - b.y
+  RETURN result
+
+
+#======================================================
+
+
+
+dot_vector3 :: (a: Vector3, b: Vector3) >> F32
+  result: F32 = a.x*b.x + a.y*b.y + a.z*b.z
+  RETURN result
+
+
+cross_vector3 :: (a: Vector3, b: Vector3) >> Vector3
+  result: Vector3
+  result.x = (a.y * b.z) - (a.z * b.y)
+  result.y = (a.z * b.x) - (a.x * b.z)
+  result.z = (a.x * b.y) - (a.y * b.x)
+  RETURN result
+
+
+magnitude_vector3 :: (a: Vector3) >> F32
+  magnitude: F32 = sqrtf(a.x*a.x + a.y*a.y + a.z*a.z)
+  RETURN magnitude
+
+
+normalize_vector3 :: (a: Vector3) >> Vector3
+  result: Vector3
+  magnitude: F32 = magnitude_vector3(a)
+  result.x = a.x / magnitude
+  result.y = a.y / magnitude
+  result.z = a.z / magnitude
+  RETURN result
+
+
+
+
+
+div_vector4_float32 :: (a: Vector4, b: F32) >> Vector4
+  r: Vector4
+  r.x = a.x / b
+  r.y = a.y / b
+  r.z = a.z / b
+  r.w = a.w / b
+  RETURN r
+
+
+orient2D :: (a: Vector2i, b: Vector2i, c: Vector2i) >> S32
+  result: S32
+  result = (b.x-a.x)*(c.y-a.y) - (b.y-a.y)*(c.x-a.x)
+  RETURN result

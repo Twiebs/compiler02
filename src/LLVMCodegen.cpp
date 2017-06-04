@@ -32,8 +32,6 @@ llvm::Value *CodegenExpression(LLVMCodegenerator *cg, Expression *expr) {
     case ExpressionType_FloatLiteral:  return CodegenFloatLiteral(cg, (FloatLiteral *)expr);
     case ExpressionType_StringLiteral: return CodegenStringLiteral(cg, (StringLiteral *)expr);
     case ExpressionType_CastExpression: return CodegenCastExpression(cg, (CastExpression *)expr);
-
-    case ExpressionType_MemberAccessExpression: return CodgenMemberAccessExpression(cg, (MemberAccessExpression *)expr);
     case ExpressionType_ConstantExpression: return CodegenConstantExpression(cg, (ConstantExpression *)expr);
 
     case ExpressionType_UnaryOperation: return CodegenUnaryOperation(cg, (UnaryOperation *)expr);
@@ -166,7 +164,7 @@ bool WriteNativeObjectToFile(llvm::Module *module) {
 
   llvm::legacy::PassManager passManager;
   llvm::PassManagerBuilder passBuilder;
-  passBuilder.OptLevel = 0;
+  passBuilder.OptLevel = 2;
   passBuilder.SizeLevel = 0;
   passBuilder.populateModulePassManager(passManager);
 
@@ -203,7 +201,7 @@ void CodegenGlobalBlock(Compiler *compiler, Block *block) {
   compiler->typeDeclF32->llvmType = llvm::Type::getFloatTy(*llvmCG.context);
   compiler->typeDeclF64->llvmType = llvm::Type::getDoubleTy(*llvmCG.context);
 
-  //InitalizeCompileUnitAndFiles(&llvmCG);
+  InitalizeCompileUnitAndFiles(&llvmCG);
 
   CodegenBlock(&llvmCG, block);
 
@@ -254,6 +252,37 @@ llvm::Type *GetLLVMType(LLVMCodegenerator *cg, TypeInfo *typeInfo) {
   return currentType;
 }
 
+
+static void GenerateLinearizedAllocasForBlock(LLVMCodegenerator *cg, Block *block) {
+  assert(block->statementType != StatementType_TypeDeclaration);
+  Statement *current = block->firstStatement;
+  while (current != nullptr) {
+    if (current->statementType == StatementType_VariableDeclaration) {
+      VariableDeclaration *varDecl = (VariableDeclaration *)current;
+      llvm::Type *llvmType = GetLLVMType(cg, &varDecl->typeInfo);
+      llvm::Value *arraySize = nullptr;
+      TempStringBuilder sb;
+      sb.append(varDecl->identifier->name.string);
+      sb.append(".stack_addr");
+      varDecl->llvmAlloca = cg->builder->CreateAlloca(llvmType, arraySize, sb.get());
+
+    } else if (current->statementType == StatementType_WhileStatement) {
+      GenerateLinearizedAllocasForBlock(cg, (Block *)current);
+    } else if (current->statementType == StatementType_IfStatement) {
+      IfStatement *is = (IfStatement *)current;
+      GenerateLinearizedAllocasForBlock(cg, (Block *)current);
+      if (is->elseStatement != nullptr) {
+        ElseStatement *es = is->elseStatement;
+        while (es != nullptr) {
+          GenerateLinearizedAllocasForBlock(cg, es);
+          es = es->nextElse;
+        }
+      }
+    }
+    current = current->next;
+  }
+}
+
 void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *procDecl) {
   llvm::Type **argumentTypes = (llvm::Type **)alloca(sizeof(llvm::Type *) * procDecl->params.parameterCount);
   VariableDeclaration *currentDecl = procDecl->params.firstParameter;
@@ -302,6 +331,8 @@ void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *pr
       }
     }
 
+    GenerateLinearizedAllocasForBlock(cg, procDecl);
+
 
     Statement *currentStatement = procDecl->firstStatement;
     while (currentStatement != nullptr) {
@@ -315,13 +346,6 @@ void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *pr
 }
 
 void CodegenVariableDeclaration(LLVMCodegenerator *cg, VariableDeclaration *varDecl) {
-  llvm::Type *llvmType = GetLLVMType(cg, &varDecl->typeInfo);
-  llvm::Value *arraySize = nullptr;
-        
-  TempStringBuilder sb;
-  sb.append(varDecl->identifier->name.string);
-  sb.append(".stack_addr");
-  varDecl->llvmAlloca = cg->builder->CreateAlloca(llvmType, arraySize, sb.get());
   if (varDecl->initalExpression != nullptr) {
     llvm::Value *llvmValue = CodegenExpression(cg, varDecl->initalExpression);
     llvm::Value *store = cg->builder->CreateStore(llvmValue, varDecl->llvmAlloca);
@@ -332,25 +356,54 @@ void CodegenConstantDeclaration(LLVMCodegenerator *cg, ConstantDeclaration *cd) 
   cd->backendPointer = CodegenExpression(cg, cd->expression);
 }
 
-llvm::Value *CodegenMemberAccess(LLVMCodegenerator *cg, llvm::Value *ptr, TypeInfo *firstType, TypeMemberAccess *ma) {
-  assert(ma->indexCount > 0);
-  llvm::Value *currentPtr = ptr;
-  TypeInfo *currentType = firstType;
+llvm::Value *CodegenVariableAccess(LLVMCodegenerator *cg, VariableAccess *va) {
   int currentIndex = 0;
-  while (currentIndex < ma->indexCount) {
-    if (currentType->indirectionLevel > 0) {
-      currentPtr = cg->builder->CreateLoad(currentPtr);
+  llvm::Value *currentPtr = va->variable->llvmAlloca;
+  VariableDeclaration *currentVar = va->variable;
+
+  while (currentIndex < va->accessCount) {
+    if (currentIndex > 0) {
+      currentVar = GetVariableAtIndex(&currentVar->typeInfo, va->indices[currentIndex]);
     }
 
-    currentType = GetSubTypeAtIndex(currentType, ma->indices[currentIndex]);
-    assert(currentType != nullptr);
-      
-    llvm::Value **indices = (llvm::Value **)alloca(2 * sizeof(llvm::Value *));
-    indices[0] = cg->builder->getInt32(0);
-    indices[1] = cg->builder->getInt32(ma->indices[currentIndex]);
-    llvm::ArrayRef<llvm::Value *> arrayRef(indices, 2);
-    llvm::Type *destType = GetLLVMType(cg, currentType);
-    currentPtr = cg->builder->CreateGEP(currentPtr, arrayRef);
+
+    if (va->subscriptExpressions[currentIndex] != 0) {
+      if (currentVar->typeInfo.indirectionLevel > 0) {
+        currentPtr = cg->builder->CreateLoad(currentPtr);
+      }
+
+      llvm::Value *e = CodegenExpression(cg, va->subscriptExpressions[currentIndex]);
+      if (currentVar->typeInfo.arraySize > 0) { 
+        llvm::Value *indices[2];
+        indices[0] = cg->builder->getInt32(0);
+        indices[1] = e;
+        llvm::ArrayRef<llvm::Value *> arrayRef(indices, 2);
+        currentPtr = cg->builder->CreateGEP(currentPtr, arrayRef);
+      } else {
+        currentPtr = cg->builder->CreateGEP(currentPtr, e);
+      }
+
+      if (currentIndex + 1 < va->accessCount) {
+        llvm::Value **indices = (llvm::Value **)alloca(2 * sizeof(llvm::Value *));
+        indices[0] = cg->builder->getInt32(0);
+        indices[1] = cg->builder->getInt32(va->indices[currentIndex + 1]);
+        llvm::ArrayRef<llvm::Value *> arrayRef(indices, 2);
+        currentPtr = cg->builder->CreateGEP(currentPtr, arrayRef);
+      }
+    }
+    
+    else if (currentIndex + 1 < va->accessCount) {
+      if (currentVar->typeInfo.indirectionLevel > 0) {
+        currentPtr = cg->builder->CreateLoad(currentPtr);
+      }
+
+      llvm::Value **indices = (llvm::Value **)alloca(2 * sizeof(llvm::Value *));
+      indices[0] = cg->builder->getInt32(0);
+      indices[1] = cg->builder->getInt32(va->indices[currentIndex + 1]);
+      llvm::ArrayRef<llvm::Value *> arrayRef(indices, 2);
+      currentPtr = cg->builder->CreateGEP(currentPtr, arrayRef);
+    }
+
     currentIndex += 1;
   }
 
@@ -359,17 +412,7 @@ llvm::Value *CodegenMemberAccess(LLVMCodegenerator *cg, llvm::Value *ptr, TypeIn
 
 void CodegenVariableAssignment(LLVMCodegenerator *cg, VariableAssignment *varAssignment) {
   llvm::Value *value = CodegenExpression(cg, varAssignment->expression);
-  llvm::Value *storePtr = varAssignment->varDecl->llvmAlloca;
-  if (varAssignment->memberAccess.indexCount > 0)
-    storePtr = CodegenMemberAccess(cg, storePtr, &varAssignment->varDecl->typeInfo, &varAssignment->memberAccess);
-  if (varAssignment->subscriptExpression != nullptr) {
-    //if (varAssignment->memberAccess.indexCount == 0) {
-      storePtr = cg->builder->CreateLoad(storePtr);
-    //r
-
-    llvm::Value *subscriptValue = CodegenExpression(cg, varAssignment->subscriptExpression);
-    storePtr = cg->builder->CreateGEP(storePtr, subscriptValue);
-  }
+  llvm::Value *storePtr = CodegenVariableAccess(cg, &varAssignment->variableAccess);
   llvm::Value *store = cg->builder->CreateStore(value, storePtr);
 }
 
@@ -435,22 +478,11 @@ llvm::Value *CodegenCastExpression(LLVMCodegenerator *cg, CastExpression *castEx
   llvm::Type *castType = castExpr->typeInfo.type->llvmType;
 
   if (src->arraySize > 0) {
-    llvm::Value *ptr = nullptr;
-    if (castExpr->expression->expressionType == ExpressionType_MemberAccessExpression) {
-      MemberAccessExpression *ma = (MemberAccessExpression *)castExpr->expression;
-      ptr = CodegenMemberAccess(cg, ma->varDecl->llvmAlloca, &ma->varDecl->typeInfo, &ma->memberAccess);
-    } else {
-      VariableExpression *varExpr = (VariableExpression *)castExpr->expression;
-      ptr = varExpr->varDecl->llvmAlloca;
-      llvm::Value **indices = (llvm::Value **)alloca(sizeof(llvm::Value *) * 2);
-      indices[0] = cg->builder->getInt32(0);
-      indices[1] = cg->builder->getInt32(0);
-      llvm::ArrayRef<llvm::Value *> arrayRef(indices, 2);
-      ptr = cg->builder->CreateGEP(ptr, arrayRef);
-    }
-
-    //llvm::Value *result = cg->builder->CreatePointerCast(ptr, castType, "array_to_pointer");
-    llvm::Value *result = ptr;
+    assert(castExpr->expression->expressionType == ExpressionType_VariableExpression);
+    VariableExpression *varExpr = (VariableExpression *)castExpr->expression;
+    llvm::Value *result = CodegenVariableAccess(cg, &varExpr->variableAccess);
+    llvm::Type *t = GetLLVMType(cg, dest);
+    result = cg->builder->CreatePointerCast(result, t);
     return result;
   }
 
@@ -488,12 +520,6 @@ llvm::Value *CodegenCastExpression(LLVMCodegenerator *cg, CastExpression *castEx
   }
 
   assert(result != nullptr);
-  return result;
-}
-
-llvm::Value *CodgenMemberAccessExpression(LLVMCodegenerator *cg, MemberAccessExpression *memberAccess) {
-  llvm::Value *value = CodegenMemberAccess(cg, memberAccess->varDecl->llvmAlloca, &memberAccess->varDecl->typeInfo, &memberAccess->memberAccess);
-  llvm::Value *result = cg->builder->CreateLoad(value);
   return result;
 }
 
@@ -570,8 +596,22 @@ llvm::Value *CodegenBinaryOperation(LLVMCodegenerator *cg, BinaryOperation *bino
 
   if (IsFloatType(binop->typeInfo.type, cg->compiler)) {
     llvm::CmpInst::Predicate pred = llvm::CmpInst::FCMP_FALSE;
-    assert(false);
-    return nullptr;
+    if (binop->binopToken == TokenType_LogicalEqual) {
+      pred = llvm::CmpInst::FCMP_UEQ;
+    } else if (binop->binopToken == TokenType_LogicalNotEqual) {
+      pred = llvm::CmpInst::FCMP_UNE;
+    } else if (binop->binopToken == TokenType_LogicalGreaterThan) {
+      pred = llvm::CmpInst::FCMP_UGT;
+    } else if (binop->binopToken == TokenType_LogicalGreaterOrEqual) {
+      pred = llvm::CmpInst::FCMP_UGE;
+    } else if (binop->binopToken == TokenType_LogicalLessThan) {
+      pred = llvm::CmpInst::FCMP_ULT;
+    } else if (binop->binopToken == TokenType_LogicalLessOrEqual) {
+      pred = llvm::CmpInst::FCMP_ULE;
+    }
+
+    llvm::Value *result = cg->builder->CreateFCmp(pred, lhsValue, rhsValue);
+    return result;
   }
 
   llvm::CmpInst::Predicate pred = (llvm::CmpInst::Predicate)0xFF;
@@ -603,10 +643,8 @@ llvm::Value *CodegenBinaryOperation(LLVMCodegenerator *cg, BinaryOperation *bino
 }
 
 llvm::Value *CodegenVariableExpression(LLVMCodegenerator *cg, VariableExpression *varExpr) {
-  TempStringBuilder sb;
-  sb.append(varExpr->varDecl->identifier->name.string);
-  sb.append(".load");
-  llvm::Value *load = cg->builder->CreateLoad(varExpr->varDecl->llvmAlloca, sb.get());
+  llvm::Value *ptr = CodegenVariableAccess(cg, &varExpr->variableAccess);
+  llvm::Value *load = cg->builder->CreateLoad(ptr);
   return load;
 }
 
@@ -635,7 +673,7 @@ llvm::Value *CodegenUnaryOperation(LLVMCodegenerator *cg, UnaryOperation *unaryO
     llvm::Value *exprValue = nullptr;
     if (unaryOp->expression->expressionType == ExpressionType_VariableExpression) {
       VariableExpression *varExpr = (VariableExpression *)unaryOp->expression;
-      exprValue = varExpr->varDecl->llvmAlloca;
+      exprValue = CodegenVariableAccess(cg, &varExpr->variableAccess);
     } else {
       exprValue = CodegenExpression(cg, unaryOp->expression);
     }
@@ -651,7 +689,13 @@ llvm::Value *CodegenUnaryOperation(LLVMCodegenerator *cg, UnaryOperation *unaryO
 
   if (unaryOp->unaryToken == TokenType_SymbolSub) {
     llvm::Value *exprValue = CodegenExpression(cg, unaryOp->expression);
-    llvm::Value *result = cg->builder->CreateNeg(exprValue);
+    llvm::Value *result = nullptr;
+    if (IsFloatType(unaryOp->typeInfo.type, cg->compiler)) {
+      result = cg->builder->CreateFNeg(exprValue);
+    } else {
+      result = cg->builder->CreateNeg(exprValue);
+    }
+    
     return result;
   }
 
@@ -672,36 +716,13 @@ llvm::Value *CodegenUnaryOperation(LLVMCodegenerator *cg, UnaryOperation *unaryO
     return result;
   }
 
-  if (unaryOp->unaryToken == TokenType_ArrayOpen) {
-    llvm::Value *subscriptValue = CodegenExpression(cg, unaryOp->subscriptExpression);
-    assert(unaryOp->expression->expressionType == ExpressionType_VariableExpression ||
-          unaryOp->expression->expressionType == ExpressionType_MemberAccessExpression);
-
-    llvm::Value *ptr = nullptr;
-    if (unaryOp->expression->expressionType == ExpressionType_MemberAccessExpression) {
-      MemberAccessExpression *ma = (MemberAccessExpression *)unaryOp->expression;
-      ptr = CodegenMemberAccess(cg, ma->varDecl->llvmAlloca, &ma->varDecl->typeInfo, &ma->memberAccess);
-    } else {
-      VariableExpression *varExpr = (VariableExpression *)unaryOp->expression;
-      ptr = varExpr->varDecl->llvmAlloca;
-    }
-
-    if (unaryOp->expression->typeInfo.indirectionLevel > 0) {
-      ptr = cg->builder->CreateLoad(ptr);
-    }
-    
-    assert(ptr != nullptr);
-    llvm::Value *value = cg->builder->CreateGEP(ptr, subscriptValue);
-    llvm::Value *result = cg->builder->CreateLoad(value);
-    return result;
-  }
-
   assert(false);
   return nullptr;
 }
 
 llvm::Value *CodegenSizeOfExpression(LLVMCodegenerator *cg, SizeOfExpression *expr) {
   const llvm::DataLayout& dataLayout = cg->module->getDataLayout();
-  uint64_t size = dataLayout.getTypeSizeInBits(expr->typeInfo.type->llvmType);
+  llvm::Type *type = GetLLVMType(cg, &expr->sizeOfTypeInfo);
+  uint64_t size = dataLayout.getTypeSizeInBits(type) / 8;
   return cg->builder->getInt64(size);
 }

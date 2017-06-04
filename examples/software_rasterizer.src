@@ -1,3 +1,6 @@
+# A very simple unoptimized software triangle rasterizer
+# This is just an example program for the toy language
+
 
 IMPORT "stdlib/sdl.src"
 IMPORT "stdlib/string.src"
@@ -5,12 +8,14 @@ IMPORT "stdlib/io.src"
 IMPORT "stdlib/debug.src"
 IMPORT "stdlib/math.src"
 IMPORT "stdlib/memory.src"
+IMPORT "math_vector.src"
+
 
 RGB8 :: TYPE
   r: U8
   g: U8
   b: U8
-  padding: U8
+
 
 RGBA8 :: TYPE
   r: U8
@@ -18,55 +23,148 @@ RGBA8 :: TYPE
   b: U8
   a: U8
 
-Vector3 :: TYPE
-  x: F32
-  y: F32
-  z: F32
-
-Vertex :: TYPE
-  position: Vector3
-  normal: Vector3
-  color: RGBA8
 
 Matrix4x4 :: TYPE
   data: [16]F32
 
-matrix4x4_row_set :: (m: @Matrix4x4, index: S32, a: F32, b: F32, c: F32, d: F32)
-  [0 + index]m.data = a
-  [4 + index]m.data = b
-  [8 + index]m.data = c
-  [12 + index]m.data = d
 
-matrix4x4_identity :: () >> Matrix4x4
-  m: Matrix4x4
-  matrix4x4_row_set(@m, 1.0, 0.0, 0.0, 0.0)
-  matrix4x4_row_set(@m, 0.0, 1.0, 0.0, 0.0)
-  matrix4x4_row_set(@m, 0.0, 0.0, 1.0, 0.0)
-  matrix4x4_row_set(@m, 0.0, 0.0, 0.0, 1.0)
-  RETURN m
+TriangleVertex :: TYPE
+  position: Vector3
+  normal: Vector3
+  color: RGBA8
 
-Render_Context :: TYPE
-  buffer_width: U32
-  buffer_height: U32
-  buffer_color: @U8
-  buffer_depth: @U32
-  lastTime: U32
-  elapsedTime: F32
-  deltaTime: F32
 
-TriangleMeshIndexed :: TYPE
-  vertices: @Vertex
+TriangleMesh :: TYPE
+  vertices: @TriangleVertex
   indices: @U32
   vertexCount: U32
   indexCount: U32
 
+
+RenderContext :: TYPE
+  bufferWidth: U32
+  bufferHeight: U32
+  bufferColor: @U8
+  bufferDepth: @U32
+  viewportMatrix: Matrix4x4
+  lastTime: U32
+  elapsedTime: F32
+  deltaTime: F32
+
+
 Camera :: TYPE
   position: Vector3
+  front: Vector3
+  pitch: F32
+  yaw: F32
+  viewportWidth: F32
+  viewportHeight: F32
+  fieldOfView: F32
 
 
-render_context_initalize :: (ctx : @Render_Context, viewport_width: U32, viewport_height: U32)
-  ctx.buffer_width = viewport_width
-  ctx.buffer_height = viewport_height
+make_rgba8 :: (r: U8, g: U8, b: U8, a: U8) >> RGBA8
+  result: RGBA8
+  result.r = r
+  result.g = g
+  result.b = b
+  result.a = a
+  RETURN result
+
+make_rgb8_from_rgba8 :: (a: RGBA8) >> RGB8
+  result: RGB8
+  result.r = a.r
+  result.g = a.g
+  result.b = a.b
+  RETURN result
+
+matrix4x4_zero :: () >> Matrix4x4
+  m: Matrix4x4
+  memset(CAST(@U8)m.data, 0x00, 16*4)
+  RETURN m
+
+
+matrix4x4_identity :: () >> Matrix4x4
+  m: Matrix4x4 = matrix4x4_zero()
+  m.data[0] = 1.0
+  m.data[5] = 1.0
+  m.data[10] = 1.0
+  m.data[15] = 1.0
+  RETURN m
+
+
+matrix4x4_translate :: (x: F32, y: F32, z: F32) >> Matrix4x4
+  result: Matrix4x4 = matrix4x4_identity()
+  result.data[12] = x
+  result.data[13] = y
+  result.data[14] = z
+  RETURN result
+
+
+matrix4x4_perspective :: (fov: F32, width: F32, height: F32, near: F32, far: F32) >> Matrix4x4
+  result: Matrix4x4 = matrix4x4_zero()
+  aspectRatio: F32 = width / height
+  tanHalfFov: F32 = tanf(fov * 0.5)
+  result.data[0] = 1.0 / (aspectRatio * tanHalfFov)
+  result.data[5] = 1.0 / (tanHalfFov)
+  result.data[10] = -(far + near) / (far - near)
+  result.data[11] = -1.0
+  result.data[14] = -(2.0 * far * near) / (far - near)
+  RETURN result
+
+
+mul_matrix4x4_vector4 :: (a: Matrix4x4, b: Vector4) >> Vector4
+  r: Vector4
+  r.x = (a.data[0] * b.x) + (a.data[4] * b.y) + (a.data[8] * b.z) + (a.data[12] * b.w)
+  r.y = (a.data[1] * b.x) + (a.data[5] * b.y) + (a.data[9] * b.z) + (a.data[13] * b.w)
+  r.z = (a.data[2] * b.x) + (a.data[6] * b.y) + (a.data[10] * b.z) + (a.data[14] * b.w)
+  r.w = (a.data[3] * b.x) + (a.data[7] * b.y) + (a.data[11] * b.z) + (a.data[15] * b.w)
+  RETURN r
+
+
+mul_matrix4x4_matrix4x4 :: (a: Matrix4x4, b: Matrix4x4) >> Matrix4x4
+  result: Matrix4x4
+  r: S64 = 0
+  WHILE r < 4
+    c: S64 = 0
+    WHILE c < 4
+      result.data[(c * 4) + r] = 0.0
+      i: S64 = 0
+      WHILE i < 4
+        result.data[(4 * c) + r] = result.data[(4 * c) + r] + (a.data[(4 * i) + r] * b.data[(4 * c) + i])
+        i = i + 1
+      c = c + 1
+    r = r + 1
+  RETURN result
+
+
+matrix4x4_look_at_direction :: (position: Vector3, direction: Vector3) >> Matrix4x4
+  up: Vector3 = make_vector3(0.0, 1.0, 0.0)
+  zaxis: Vector3 = normalize_vector3(direction)
+  xaxis: Vector3 = normalize_vector3(cross_vector3(zaxis, up))
+  yaxis: Vector3 = normalize_vector3(cross_vector3(xaxis, zaxis))
+  r: Matrix4x4
+  r.data[0] = xaxis.x
+  r.data[1] = yaxis.x
+  r.data[2] = -zaxis.x
+  r.data[3] = 0.0
+  r.data[4] = xaxis.y
+  r.data[5] = yaxis.y
+  r.data[6] = -zaxis.y
+  r.data[7] = 0.0
+  r.data[8] = xaxis.z
+  r.data[9] = yaxis.z
+  r.data[10] = -zaxis.z
+  r.data[11] = 0.0
+  r.data[12] = -dot_vector3(xaxis, position)
+  r.data[13] = -dot_vector3(yaxis, position)
+  r.data[14] = dot_vector3(zaxis, position)
+  r.data[15] = 1.0
+  RETURN r
+
+
+renderContextInitalize :: (ctx : @RenderContext, viewport_width: U32, viewport_height: U32)
+  ctx.bufferWidth = viewport_width
+  ctx.bufferHeight = viewport_height
   ctx.lastTime = 0
   ctx.elapsedTime = 0.0
   ctx.deltaTime = 0.0
@@ -74,136 +172,235 @@ render_context_initalize :: (ctx : @Render_Context, viewport_width: U32, viewpor
   required_memory: U64 = CAST(U64)((viewport_width * viewport_height) * 3)
   required_memory = required_memory + CAST(U64)(viewport_width * viewport_height * 4)
   memory: @U8 = malloc(required_memory)
-  ctx.buffer_color = memory
-  ctx.buffer_depth = CAST(@U32)(CAST(U64)memory + CAST(U64)((viewport_width * viewport_height) * 3))
+  ctx.bufferColor = memory
+  ctx.bufferDepth = CAST(@U32)(CAST(U64)memory + CAST(U64)((viewport_width * viewport_height) * 3))
 
-render_context_terminate :: (ctx : @Render_Context)
-  free(ctx.buffer_color)
+  ctx.viewportMatrix = matrix4x4_zero()
+  ctx.viewportMatrix.data[0] = CAST(F32)ctx.bufferWidth / 2.0
+  ctx.viewportMatrix.data[5] = CAST(F32)ctx.bufferHeight / 2.0
+  ctx.viewportMatrix.data[10] = 0.5
+  ctx.viewportMatrix.data[12] = CAST(F32)ctx.bufferWidth / 2.0
+  ctx.viewportMatrix.data[13] = CAST(F32)ctx.bufferHeight / 2.0
+  ctx.viewportMatrix.data[14] = 0.5
+  ctx.viewportMatrix.data[14] = 1.0
 
-framebufferClear :: (ctx : @Render_Context)
-  bufferSize: U32 = CAST(U32)(ctx.buffer_width * ctx.buffer_height * 3)
-  memset(ctx.buffer_color, 0, CAST(U64)bufferSize)
+
+renderContextTerminate :: (ctx : @RenderContext)
+  free(ctx.bufferColor) #This is where memory for the whole buffer starts
 
 
-vector3 :: (x: F32, y: F32, z: F32) >> Vector3
-  result: Vector3
-  result.x = x
-  result.y = y
-  result.z = z
-  RETURN result
+framebufferClear :: (ctx : @RenderContext)
+  bufferSize: U32 = CAST(U32)(ctx.bufferWidth * ctx.bufferHeight * 3)
+  memset(ctx.bufferColor, 0, CAST(U64)bufferSize)
 
-vertexPosNorm :: (pos: Vector3, n: Vector3) >> Vertex
-  result: Vertex
-  result.position = pos
-  result.normal = n
-  RETURN result
 
-allocateIndexedTriangleMesh :: (vertexCount: U32, indexCount: U32) >> @TriangleMeshIndexed
+# Temporarily ignoring alignment
+allocateTriangleMesh :: (vertexCount: U32, indexCount: U32) >> @TriangleMesh
   requiredMemory: U64 = 0
-  requiredMemory = requiredMemory + SIZEOF(TriangleMeshIndexed)
-  requiredMemory = memory_align(requiredMemory, 8)
-  requiredMemory = requiredMemory + SIZEOF(Vertex) * CAST(U64)vertexCount
-  requiredMemory = memory_align(requiredMemory, 8)
+  requiredMemory = requiredMemory + SIZEOF(TriangleMesh)
+  requiredMemory = requiredMemory + SIZEOF(TriangleVertex) * CAST(U64)vertexCount
   requiredMemory = requiredMemory + SIZEOF(U32) * CAST(U64)indexCount
+
   memory: @U8 = memory_allocate(requiredMemory)
-  mesh: @TriangleMeshIndexed = CAST(@TriangleMeshIndexed)memory
-  mesh.vertices = CAST(@Vertex)memory_align(CAST(U64)memory + SIZEOF(TriangleMeshIndexed), 8)
-  mesh.indices = CAST(@U32)memory_align(CAST(U64)mesh.vertices + SIZEOF(Vertex) * CAST(U64)vertexCount, 8)
+  mesh: @TriangleMesh = CAST(@TriangleMesh)memory
+  mesh.vertices = CAST(@TriangleVertex)(CAST(U64)memory + SIZEOF(TriangleMesh))
+  mesh.indices = CAST(@U32)(CAST(U64)mesh.vertices + (SIZEOF(TriangleVertex) * CAST(U64)vertexCount))
   mesh.vertexCount = vertexCount
   mesh.indexCount = indexCount
   RETURN mesh
 
 
-createProceduralPlaneMesh :: () >> @TriangleMeshIndexed
-  mesh: @TriangleMeshIndexed = allocateIndexedTriangleMesh(4, 6)
-  mesh.vertices[0].position = vector3(0.0, 0.0, 0.0)
-  mesh.vertices[1].position = vector3(1.0, 0.0, 0.0)
-  mesh.vertices[2].position = vector3(1.0, 0.0, 1.0)
-  mesh.vertices[3].position = vector3(0.0, 0.0, 1.0)
-  mesh.vertices[0].normal = vector3(0.0, 1.0, 0.0)
-  mesh.vertices[1].normal = vector3(1.0, 1.0, 0.0)
-  mesh.vertices[2].normal = vector3(1.0, 1.0, 1.0)
-  mesh.vertices[3].normal = vector3(0.0, 1.0, 1.0)
+createProceduralPlaneMesh :: () >> @TriangleMesh
+  mesh: @TriangleMesh = allocateTriangleMesh(4, 6)
+  mesh.vertices[0].position = make_vector3(0.0, 0.0, 0.0)
+  mesh.vertices[1].position = make_vector3(1.0, 0.0, 0.0)
+  mesh.vertices[2].position = make_vector3(1.0, 0.0, 1.0)
+  mesh.vertices[3].position = make_vector3(0.0, 0.0, 1.0)
+  mesh.vertices[0].normal = make_vector3(0.0, 1.0, 0.0)
+  mesh.vertices[1].normal = make_vector3(0.0, 1.0, 0.0)
+  mesh.vertices[2].normal = make_vector3(0.0, 1.0, 0.0)
+  mesh.vertices[3].normal = make_vector3(0.0, 1.0, 0.0)
   mesh.indices[0] = 0 mesh.indices[1] = 1 mesh.indices[2] = 2
   mesh.indices[3] = 0 mesh.indices[4] = 2 mesh.indices[5] = 3
   RETURN mesh
 
 
-setFramebufferPixel :: (x: S32, y: S32, color: RGB8, ctx: @Render_Context) >> S32
-  IF CAST(U32)x < 0 || CAST(U32)x >= ctx.buffer_width
-    RETURN 0
-  IF CAST(U32)y < 0 || CAST(U32)y >= ctx.buffer_height
-    RETURN 0
+createProceduralSquarePlaneMesh :: (cellsPerEdgeCount: S32, halfWidth: F32) >> @TriangleMesh
+  totalVertexCount: S32 = (cellsPerEdgeCount * cellsPerEdgeCount) * 4
+  totalIndexCount: S32 = (cellsPerEdgeCount * cellsPerEdgeCount) * 6
+  mesh: @TriangleMesh = allocateTriangleMesh(CAST(U32)totalVertexCount, CAST(U32)totalIndexCount)
+  vertexOffset: S32 = 0
+  indexOffset: S32 = 0
+  cellWidth: F32 = (halfWidth * 2.0) / CAST(F32)cellsPerEdgeCount
 
-  index: U64 = CAST(U64)((CAST(U32)x + (CAST(U32)y * ctx.buffer_width)) * 3)
-  [index + 0]ctx.buffer_color = color.r
-  [index + 1]ctx.buffer_color = color.g
-  [index + 2]ctx.buffer_color = color.b
-  RETURN 1
+  y: S32 = 0
+  WHILE y < cellsPerEdgeCount
+    x: S32 = 0
+    WHILE x < cellsPerEdgeCount
+      xpos: F32 = CAST(F32)x * cellWidth
+      ypos: F32 = CAST(F32)y * cellWidth
+      color: RGBA8
+      IF (y % 2) == 0
+        color = make_rgba8(175, 175, 175, 255)
+        IF (x % 2) == 0
+          color = make_rgba8(125, 125, 125, 255)
+      ELSE
+        color = make_rgba8(125, 125, 125, 255)
+        IF (x % 2) == 0
+          color = make_rgba8(175, 175, 175, 255)
+
+      mesh.vertices[vertexOffset + 0].position = make_vector3(xpos, 0.0, ypos)
+      mesh.vertices[vertexOffset + 1].position = make_vector3(xpos + cellWidth, 0.0, ypos)
+      mesh.vertices[vertexOffset + 2].position = make_vector3(xpos + cellWidth, 0.0, ypos + cellWidth)
+      mesh.vertices[vertexOffset + 3].position = make_vector3(xpos, 0.0, ypos + cellWidth)
+      mesh.vertices[vertexOffset + 0].normal = make_vector3(0.0, 1.0, 0.0)
+      mesh.vertices[vertexOffset + 1].normal = make_vector3(0.0, 1.0, 0.0)
+      mesh.vertices[vertexOffset + 2].normal = make_vector3(0.0, 1.0, 0.0)
+      mesh.vertices[vertexOffset + 3].normal = make_vector3(0.0, 1.0, 0.0)
+      mesh.vertices[vertexOffset + 0].color = color
+      mesh.vertices[vertexOffset + 1].color = color
+      mesh.vertices[vertexOffset + 2].color = color
+      mesh.vertices[vertexOffset + 3].color = color
+      mesh.indices[indexOffset + 0] = CAST(U32)(vertexOffset + 0)
+      mesh.indices[indexOffset + 1] = CAST(U32)(vertexOffset + 1) 
+      mesh.indices[indexOffset + 2] = CAST(U32)(vertexOffset + 2)
+      mesh.indices[indexOffset + 3] = CAST(U32)(vertexOffset + 0) 
+      mesh.indices[indexOffset + 4] = CAST(U32)(vertexOffset + 2) 
+      mesh.indices[indexOffset + 5] = CAST(U32)(vertexOffset + 3)
+      vertexOffset = vertexOffset + 4
+      indexOffset = indexOffset + 6
+      x = x + 1
+    y = y + 1
+  RETURN mesh
+
+
+calculateBarycentricCoordinates :: (a: Vector3, b: Vector3, c: Vector3, p: Vector3) >> Vector3
+  baryCoords: Vector3
+  ab: Vector3 = sub_vector3_vector3(b, a)
+  ac: Vector3 = sub_vector3_vector3(c, a)
+  ap: Vector3 = sub_vector3_vector3(p, a)
+  d00: F32 = dot_vector3(ab, ab)
+  d01: F32 = dot_vector3(ab, ac)
+  d11: F32 = dot_vector3(ac, ac)
+  d20: F32 = dot_vector3(ap, ab)
+  d21: F32 = dot_vector3(ap, ac)
+  denom: F32 = d00 * d11 - d01 * d01
+  baryCoords.z = (d00 * d21 - d01 * d20) / denom
+  baryCoords.y = (d11 * d20 - d01 * d21) / denom
+  baryCoords.x = 1.0 - baryCoords.y - baryCoords.z
+  RETURN baryCoords
+
+
+topOrLeftEdgeBias :: (a: Vector2i, b: Vector2i) >> S32
+  bias: S32 = -1
+  edge: Vector2i = sub_vector2i_vector2i(b, a)
+  IF (b.y < a.y) && (edge.x < 0)
+    bias = 0
+  RETURN bias
 
 
 
+drawTriangle :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, a: TriangleVertex, b: TriangleVertex, c: TriangleVertex)
+  localSpaceA: Vector4 = make_vector4_from_vector3(a.position, 1.0)
+  localSpaceB: Vector4 = make_vector4_from_vector3(b.position, 1.0)
+  localSpaceC: Vector4 = make_vector4_from_vector3(c.position, 1.0)
+  clipSpaceA: Vector4 = mul_matrix4x4_vector4(mvpMatrix, localSpaceA)
+  clipSpaceB: Vector4 = mul_matrix4x4_vector4(mvpMatrix, localSpaceB)
+  clipSpaceC: Vector4 = mul_matrix4x4_vector4(mvpMatrix, localSpaceC)
+  clipSpaceA = div_vector4_float32(clipSpaceA, clipSpaceA.w)
+  clipSpaceB = div_vector4_float32(clipSpaceB, clipSpaceB.w)
+  clipSpaceC = div_vector4_float32(clipSpaceC, clipSpaceC.w)
+  viewportSpaceA: Vector3 = make_vector3_from_vector4(mul_matrix4x4_vector4(ctx.viewportMatrix, clipSpaceA))
+  viewportSpaceB: Vector3 = make_vector3_from_vector4(mul_matrix4x4_vector4(ctx.viewportMatrix, clipSpaceB))
+  viewportSpaceC: Vector3 = make_vector3_from_vector4(mul_matrix4x4_vector4(ctx.viewportMatrix, clipSpaceC))
+
+  SUB_PIXEL_STEP :: 1
+  SUB_PIXEL_MASK :: 0
+  subPixelBufferWidth: S32 = CAST(S32)(ctx.bufferWidth * SUB_PIXEL_STEP)
+  subPixelBufferHeight: S32 = CAST(S32)(ctx.bufferHeight * SUB_PIXEL_STEP) 
+  subPixelSpaceA: Vector2i = make_vector2i(CAST(S32)(viewportSpaceA.x * CAST(F32)SUB_PIXEL_STEP), CAST(S32)(viewportSpaceA.y * CAST(F32)SUB_PIXEL_STEP))
+  subPixelSpaceB: Vector2i = make_vector2i(CAST(S32)(viewportSpaceB.x * CAST(F32)SUB_PIXEL_STEP), CAST(S32)(viewportSpaceB.y * CAST(F32)SUB_PIXEL_STEP))
+  subPixelSpaceC: Vector2i = make_vector2i(CAST(S32)(viewportSpaceC.x * CAST(F32)SUB_PIXEL_STEP), CAST(S32)(viewportSpaceC.y * CAST(F32)SUB_PIXEL_STEP))
+  bias0: S32 = topOrLeftEdgeBias(subPixelSpaceB, subPixelSpaceC)
+  bias1: S32 = topOrLeftEdgeBias(subPixelSpaceC, subPixelSpaceA)
+  bias2: S32 = topOrLeftEdgeBias(subPixelSpaceC, subPixelSpaceA)
+
+  # Clips our draw range to the union of the triangles bounding box and buffer bounds
+  minX: S32 = min_int32(subPixelSpaceA.x, min_int32(subPixelSpaceB.x, subPixelSpaceC.x))
+  maxX: S32 = max_int32(subPixelSpaceA.x, max_int32(subPixelSpaceB.x, subPixelSpaceC.x))
+  minY: S32 = min_int32(subPixelSpaceA.y, min_int32(subPixelSpaceB.y, subPixelSpaceC.y))
+  maxY: S32 = max_int32(subPixelSpaceA.y, max_int32(subPixelSpaceB.y, subPixelSpaceC.y))
+  minX = max_int32(0, minX)
+  minY = max_int32(0, minY)
+  maxX = min_int32(subPixelBufferWidth - 1, maxX)
+  maxY = min_int32(subPixelBufferHeight - 1, maxY)
+  minX = (minX + SUB_PIXEL_MASK) & (~SUB_PIXEL_MASK)
+  minY = (minY + SUB_PIXEL_MASK) & (~SUB_PIXEL_MASK)
+
+  currentSubPixel: Vector2i = make_vector2i(minX, minY)
+  WHILE currentSubPixel.y < maxY
+    WHILE currentSubPixel.x < maxX
+      w0: S32 = orient2D(subPixelSpaceB, subPixelSpaceC, currentSubPixel) + bias0
+      w1: S32 = orient2D(subPixelSpaceC, subPixelSpaceA, currentSubPixel) + bias1
+      w2: S32 = orient2D(subPixelSpaceA, subPixelSpaceB, currentSubPixel) + bias2
+
+      IF w0 >= 0 && w1 >= 0 && w2 >= 0
+        color: RGB8 = make_rgb8_from_rgba8(a.color)
+        pixelX: S32 = currentSubPixel.x / SUB_PIXEL_STEP
+        pixelY: S32 = currentSubPixel.y / SUB_PIXEL_STEP
+        index: U64 = CAST(U64)((CAST(U32)pixelX + (CAST(U32)pixelY * ctx.bufferWidth)) * 3)
+        ctx.bufferColor[index + 0] = color.r
+        ctx.bufferColor[index + 1] = color.g
+        ctx.bufferColor[index + 2] = color.b
+      currentSubPixel.x = currentSubPixel.x + SUB_PIXEL_STEP
+    currentSubPixel.y = currentSubPixel.y + SUB_PIXEL_STEP
 
 
-drawCircle :: (x: S32, y: S32, r: S32, ctx: @Render_Context)
-  xi: S32 = x - r
-  yi: S32 = y - r
-  color: RGB8
-  color.r = 0xFF
-  color.g = 0x00
-  color.b = 0xFF
-  WHILE xi <= (x + r)
-    WHILE yi <= (y + r)
-      IF (xi*xi) + (yi*yi) < (r*r)
-        setFramebufferPixel(xi, yi, color, ctx)
-      yi = yi + 1
-    xi = xi + 1
+drawTriangleMesh :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, mesh: @TriangleMesh)
+  currentIndex: S64 = 0
+  WHILE currentIndex < CAST(S64)mesh.indexCount
+    index0: U32 = mesh.indices[currentIndex + 0]
+    index1: U32 = mesh.indices[currentIndex + 1]
+    index2: U32 = mesh.indices[currentIndex + 2]
+    drawTriangle(ctx, mvpMatrix, mesh.vertices[index0], mesh.vertices[index1], mesh.vertices[index2])
+    currentIndex = currentIndex + 3
 
 
-drawRectangle :: (ctx: @Render_Context, x: S32, y: S32, w: S32, h: S32, color: RGB8)
-  xi: S32 = x
-  yi: S32 = y
-
-  WHILE yi < y + h
-    WHILE xi < x + w
-      setFramebufferPixel(xi, yi, color, ctx)
-      xi = xi + 1
-    yi = yi + 1
-    xi = x
-
-
-copy_framebuffer_to_sdl_texture :: (ctx: @Render_Context, texture: @SDL_Texture)
+copy_framebuffer_to_sdl_texture :: (ctx: @RenderContext, texture: @SDL_Texture)
   pixels: @U8 = 0
   pitch: S32 = 0
   SDL_LockTexture(texture, CAST(@SDL_Rect)0, @pixels, @pitch)
   write_index: U64 = 0
   read_index: U64 = 0
-  WHILE write_index < CAST(U64)(ctx.buffer_width * ctx.buffer_height * 4)
-    [write_index + 3]pixels = 255 #A
-    [write_index + 2]pixels = [read_index + 0]ctx.buffer_color #R
-    [write_index + 1]pixels = [read_index + 1]ctx.buffer_color #G
-    [write_index + 0]pixels = [read_index + 2]ctx.buffer_color #B
+  WHILE write_index < CAST(U64)(ctx.bufferWidth * ctx.bufferHeight * 4)
+    pixels[write_index + 3] = 255 #A
+    pixels[write_index + 2] = ctx.bufferColor[read_index + 0] #R
+    pixels[write_index + 1] = ctx.bufferColor[read_index + 1] #G
+    pixels[write_index + 0] = ctx.bufferColor[read_index + 2] #B
     write_index = write_index + 4
     read_index = read_index + 3
   SDL_UnlockTexture(texture)
 
 
-renderScene :: (ctx: @Render_Context)
-  color: RGB8
-  color.r = 255
-  color.g = 0
-  color.b = 0
-  x: S32 = 400 + CAST(S32)(200.0 * sinf(ctx.elapsedTime))
-  y: S32 = 400 + CAST(S32)(100.0 * cosf(ctx.elapsedTime))
-  drawRectangle(ctx, x, y, 64, 64, color)
+renderScene :: (ctx: @RenderContext, camera: @Camera, mesh: @TriangleMesh)
+  camera.front.x = cosf(camera.yaw) * cosf(camera.pitch)
+  camera.front.y = sinf(camera.pitch)
+  camera.front.z = sinf(camera.yaw) * cosf(camera.pitch)
+  camera.front = normalize_vector3(camera.front)
+
+  modelMatrix: Matrix4x4 = matrix4x4_translate(0.0, 0.0, 0.0)
+  viewMatrix: Matrix4x4 = matrix4x4_look_at_direction(camera.position, camera.front)
+  projectionMatrix: Matrix4x4 = matrix4x4_perspective(camera.fieldOfView, camera.viewportWidth, camera.viewportHeight, 0.1, 100.0)
+  mvpMatrix: Matrix4x4 = mul_matrix4x4_matrix4x4(projectionMatrix, mul_matrix4x4_matrix4x4(viewMatrix, modelMatrix))
+  drawTriangleMesh(ctx, mvpMatrix, mesh)
 
 
 main :: () >> S32
   BUFFER_WIDTH :: 1280
   BUFFER_HEIGHT :: 720
 
-  ctx: Render_Context
-  render_context_initalize(@ctx, BUFFER_WIDTH, BUFFER_HEIGHT)
+  ctx: RenderContext
+  renderContextInitalize(@ctx, BUFFER_WIDTH, BUFFER_HEIGHT)
 
   SDL_Init(SDL_INIT_VIDEO)
   sdl_window: @SDL_Window = SDL_CreateWindow("SoftwareRasterizer", 0, 0, BUFFER_WIDTH, BUFFER_HEIGHT, SDL_WINDOW_OPENGL)
@@ -216,8 +413,22 @@ main :: () >> S32
   sdl_glcontext: @SDL_GLContext = SDL_GL_CreateContext(sdl_window)
   texture: @SDL_Texture = SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STREAMING, BUFFER_WIDTH, BUFFER_HEIGHT)
 
-  planeMesh: @TriangleMeshIndexed = createProceduralPlaneMesh()
+  planeMesh: @TriangleMesh = createProceduralSquarePlaneMesh(8, 8.0)
 
+  camera: Camera
+  camera.position = make_vector3(0.0, 10.0, 0.0)
+  camera.yaw = degrees_to_radians(90.0)
+  camera.pitch = degrees_to_radians(0.0)
+  camera.fieldOfView = degrees_to_radians(45.0)
+  camera.viewportWidth = CAST(F32)BUFFER_WIDTH
+  camera.viewportHeight = CAST(F32)BUFFER_HEIGHT
+
+  lastGlobalMouseX: S32 = 0
+  lastGlobalMouseY: S32 = 0
+  SDL_GetGlobalMouseState(@lastGlobalMouseX, @lastGlobalMouseY)
+
+  keycount: S32
+  keystate: @U8 = SDL_GetKeyboardState(@keycount)
 
   isRunning: S32 = 1
   WHILE isRunning == 1
@@ -238,15 +449,46 @@ main :: () >> S32
       IF event.type == SDL_QUIT
         RETURN 0
 
+    currentMouseX : S32 = 0
+    currentMouseY : S32 = 0
+    buttonMask: U32 = SDL_GetGlobalMouseState(@currentMouseX, @currentMouseY)
+    deltaMouseX: S32 = currentMouseX - lastGlobalMouseX
+    deltaMouseY: S32 = currentMouseY - lastGlobalMouseY
+    lastGlobalMouseX = currentMouseX
+    lastGlobalMouseY = currentMouseY
+
+    # Camera FPS Controls
+    IF (buttonMask & SDL_BUTTON_RMASK) > 0
+      camera.yaw = camera.yaw + (CAST(F32)deltaMouseX * ctx.deltaTime)
+      camera.pitch = camera.pitch + (CAST(F32)deltaMouseY * ctx.deltaTime)
+      camera.pitch = clamp_float32(camera.pitch, degrees_to_radians(-89.0), degrees_to_radians(89.0))
+
+      cameraUp: Vector3 = make_vector3(0.0, 1.0, 0.0)
+      cameraRight: Vector3 = normalize_vector3(cross_vector3(camera.front, cameraUp))
+      deltaPosition: Vector3 = make_vector3(0.0, 0.0, 0.0)
+      IF keystate[SDL_SCANCODE_W] > 0
+        deltaPosition = sub_vector3_vector3(deltaPosition, camera.front)
+      IF keystate[SDL_SCANCODE_S] > 0
+        deltaPosition = add_vector3_vector3(deltaPosition, camera.front)
+      IF keystate[SDL_SCANCODE_A] > 0
+        deltaPosition = add_vector3_vector3(deltaPosition, cameraRight)
+      IF keystate[SDL_SCANCODE_D] > 0
+        deltaPosition = sub_vector3_vector3(deltaPosition, cameraRight)
+      IF keystate[SDL_SCANCODE_SPACE] > 0
+        deltaPosition = add_vector3_vector3(deltaPosition, cameraUp)
+      IF keystate[SDL_SCANCODE_LCTRL] > 0
+        deltaPosition = sub_vector3_vector3(deltaPosition, cameraUp)
+
+      deltaPosition = mul_vector3_float32(deltaPosition, 3.0)
+      deltaPosition = mul_vector3_float32(deltaPosition, ctx.deltaTime)
+      camera.position = add_vector3_vector3(camera.position, deltaPosition)
+
+
     framebufferClear(@ctx)
-    renderScene(@ctx)
+    renderScene(@ctx, @camera, planeMesh)
     copy_framebuffer_to_sdl_texture(@ctx, texture)
     SDL_RenderCopy(sdl_renderer, texture, CAST(@SDL_Rect)0, CAST(@SDL_Rect)0)
     SDL_RenderPresent(sdl_renderer)
     
-  render_context_terminate(@ctx)
+  renderContextTerminate(@ctx)
   RETURN 0
-
-
-
-

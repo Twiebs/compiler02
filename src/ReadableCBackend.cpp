@@ -35,7 +35,6 @@ void CodeGenExpression(Expression *expression, std::ostream& stream) {
     case ExpressionType_VariableExpression: CodeGenVariableExpression((VariableExpression *)expression, stream); break;
     case ExpressionType_ConstantExpression: CodeGenConstantExpression((ConstantExpression *)expression, stream); break;
     case ExpressionType_CallExpression: CodeGenCallExpression((CallExpression *)expression, stream); break;
-    case ExpressionType_MemberAccessExpression: CodeGenMemberAccessExpression((MemberAccessExpression *)expression, stream); break;
 
     case ExpressionType_UnaryOperation: CodeGenUnaryOperation((UnaryOperation *)expression, stream); break;
     case ExpressionType_BinaryOperation: CodeGenBinaryOperation((BinaryOperation *)expression, stream); break;
@@ -115,24 +114,32 @@ void CodeGenParameterInvokation(ParameterInvokation *params, std::ostream& strea
   stream << ")";
 }
 
-
-void CodeGenMemberAccess(TypeMemberAccess *ma, VariableDeclaration *varDecl, std::ostream& stream) {
-  TypeDeclaration *currentType = varDecl->typeInfo.type;
-  VariableDeclaration *currentVar = varDecl;
-  for (size_t i = 0; i < ma->indexCount; i++) {
-    VariableDeclaration *currentMember = (VariableDeclaration *)currentType->firstStatement;
-    for (size_t j = 0; j < ma->indices[i]; j++) {
-      currentMember = (VariableDeclaration *)currentMember->next;
+void CodeGenVariableAccess(VariableAccess *va, std::ostream& stream) {
+  VariableDeclaration *currentVar = va->variable;
+  for (size_t i = 0; i < va->accessCount; i++) {
+    if (i != 0) {
+      currentVar = GetVariableAtIndex(&currentVar->typeInfo, va->indices[i]);
     }
 
-    if (currentVar->typeInfo.indirectionLevel > 0) {
-      stream << "->" << currentMember->identifier->name.string;
-    } else {
-      stream << "." << currentMember->identifier->name.string;
+    stream << currentVar->identifier->name.string;
+    if (va->subscriptExpressions[i] != 0) {
+      stream << "[";
+      CodeGenExpression(va->subscriptExpressions[i], stream);
+      stream << "]";
+      if (i + 1 < va->accessCount) {
+        if (currentVar->typeInfo.indirectionLevel - 1 > 0) {
+          stream << "->";
+        } else {
+          stream << ".";
+        }
+      }
+    } else if (i + 1 < va->accessCount) {
+      if (currentVar->typeInfo.indirectionLevel > 0) {
+        stream << "->";
+      } else {
+        stream << ".";
+      }
     }
-    
-    currentType = (TypeDeclaration *)currentMember->typeInfo.type;
-    currentVar = currentMember;
   }
 }
 //===========================================================================================
@@ -227,14 +234,7 @@ void CodeGenConstantDeclaration(ConstantDeclaration *c, std::ostream& stream) {
 }
 
 void CodeGenVariableAssignment(VariableAssignment *varAssignment, std::ostream& stream) {
-  stream << varAssignment->varDecl->identifier->name.string;
-  CodeGenMemberAccess(&varAssignment->memberAccess, varAssignment->varDecl, stream);
-  if (varAssignment->subscriptExpression != nullptr) {
-    stream << "[";
-    CodeGenExpression(varAssignment->subscriptExpression, stream);
-    stream << "]";
-  }
-
+  CodeGenVariableAccess(&varAssignment->variableAccess, stream);
   stream << " = ";
   CodeGenExpression(varAssignment->expression, stream);
   stream << ";";
@@ -275,7 +275,7 @@ void CodeGenStringLiteral(StringLiteral *stringLiteral, std::ostream& stream) {
 }
 
 void CodeGenVariableExpression(VariableExpression *varExpr, std::ostream& stream) {
-  stream << varExpr->varDecl->identifier->name.string;
+  CodeGenVariableAccess(&varExpr->variableAccess, stream);
 }
 
 void CodeGenConstantExpression(ConstantExpression *ce, std::ostream& stream) {
@@ -329,12 +329,6 @@ void CodeGenUnaryOperation(UnaryOperation *unaryOp, std::ostream& stream) {
   }
 }
 
-void CodeGenMemberAccessExpression(MemberAccessExpression *memberAccessExpr, std::ostream& stream) {
-  Identifier *ident = memberAccessExpr->varDecl->identifier;
-  stream << ident->name.string;
-  CodeGenMemberAccess(&memberAccessExpr->memberAccess, memberAccessExpr->varDecl, stream);
-}
-
 void CodeGenCastExpression(CastExpression *castExpr, std::ostream& stream) {
   stream << "(";
   CodeGenTypeNameAndPointers(&castExpr->typeInfo, stream);
@@ -344,6 +338,6 @@ void CodeGenCastExpression(CastExpression *castExpr, std::ostream& stream) {
 
 void CodeGenSizeOfExpression(SizeOfExpression *expression, std::ostream& stream) {
   stream << "sizeof(";
-  CodeGenTypeNameAndPointers(&expression->typeInfo, stream);
+  CodeGenTypeNameAndPointers(&expression->sizeOfTypeInfo, stream);
   stream << ")";
 }

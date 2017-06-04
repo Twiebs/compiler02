@@ -26,6 +26,9 @@ llvm::DIType *LLVMCodegenerator::GetDIType(TypeInfo *typeInfo) {
 
 void LLVMCodegenerator::CreateDebugInfoForProcedure(ProcedureDeclaration *procedure) {
   llvm::DIFile *file = diFiles[procedure->location.fileID];
+  llvm::DIType *parameterTypes[procedure->params.parameterCount];
+  //llvm::ArrayRef<llvm::DIType *> arrayRef(parameterTypes, procedure->params.parameterCount);
+  //DITypeArrayRef diArrayRef = dibuilder->getOrCreateTypeArray(arrayRef);
   //Return type is at zero index
   llvm::DISubroutineType *type = 0; //dibuilder->createSubroutineType();
 

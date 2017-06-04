@@ -85,7 +85,6 @@ void PrintStatement(Statement *statement, int blockDepth) {
     case StatementType_ProcedureDeclaration: PrintProcedureDeclaration((ProcedureDeclaration *)statement, blockDepth); break;
     case StatementType_ConstantDeclaration: PrintConstantDeclaration((ConstantDeclaration *)statement, std::cout); break;
 
-    case StatementType_VariableAssignment: PrintVariableAssignment((VariableAssignment *)statement, blockDepth); break;
     case StatementType_CallStatement: PrintCallStatement((CallStatement *)statement); break;
     case StatementType_ReturnStatement: PrintReturnStatement((ReturnStatement *)statement, blockDepth); break;
 
@@ -146,10 +145,8 @@ void PrintExpression(Expression *expression) {
     case ExpressionType_FloatLiteral: PrintFloatLiteral((FloatLiteral *)expression); break;
     case ExpressionType_StringLiteral: PrintStringLiteral((StringLiteral *)expression); break;
 
-    case ExpressionType_VariableExpression: PrintVariableExpression((VariableExpression *)expression); break;
     case ExpressionType_ConstantExpression: PrintConstantExpression((ConstantExpression *)expression, std::cout); break;
     case ExpressionType_CallExpression: PrintCallExpression((CallExpression *)expression); break;
-    case ExpressionType_MemberAccessExpression: PrintMemberAccessExpression((MemberAccessExpression *)expression); break;
 
     case ExpressionType_UnaryOperation: PrintUnaryOperation((UnaryOperation *)expression); break;
     case ExpressionType_BinaryOperation: PrintBinaryOperation((BinaryOperation *)expression); break;
@@ -251,23 +248,6 @@ void PrintProcedureDeclaration(ProcedureDeclaration *procDecl, int blockDepth) {
   }
 }
 
-void PrintVariableAssignment(VariableAssignment *varAssignment, int blockDepth) {
-  Identifier *ident = varAssignment->varDecl->identifier;
-  printf("%.*s", (int)ident->name.length, ident->name.string);
-
-  TypeDeclaration *currentType = (TypeDeclaration *)varAssignment->varDecl->typeInfo.type;
-  for (size_t i = 0; i < varAssignment->memberAccess.indexCount; i++) {
-    VariableDeclaration *currentMember = (VariableDeclaration *)currentType->firstStatement;
-    for (size_t j = 0; j < varAssignment->memberAccess.indices[i]; j++)
-      currentMember = (VariableDeclaration *)currentMember->next;
-    Identifier *memberIdent = currentMember->identifier;
-    printf(".%.*s", (int)memberIdent->name.length, memberIdent->name.string);
-    currentType = (TypeDeclaration *)currentMember->typeInfo.type;
-  }
-
-  printf(" = ");
-  PrintExpression(varAssignment->expression);
-}
 
 void PrintCallStatement(CallStatement *callStatement) {
   Identifier *procIdent = callStatement->procedure->identifier;
@@ -292,10 +272,6 @@ void PrintStringLiteral(StringLiteral *stringLiteral) {
   printf("\"%.*s\"", (int)stringLiteral->value.length, stringLiteral->value.string);
 }
 
-void PrintVariableExpression(VariableExpression *varExpr) {
-  printf("%.*s", (int)varExpr->varDecl->identifier->name.length, varExpr->varDecl->identifier->name.string);
-}
-
 void PrintCastExpression(CastExpression *castExpr) {
   Identifier *typeIdent = castExpr->typeInfo.type->identifier;
   printf("CAST(");
@@ -312,20 +288,6 @@ void PrintCallExpression(CallExpression *callExpr) {
 
 void PrintConstantExpression(ConstantExpression *ce, std::ostream& s) {
   s << ce->constant->identifier->name.string;
-}
-
-void PrintMemberAccessExpression(MemberAccessExpression *expr) {
-  Identifier *ident = expr->varDecl->identifier;
-  printf("%.*s", (int)ident->name.length, ident->name.string);
-  TypeDeclaration *currentType = (TypeDeclaration *)expr->varDecl->typeInfo.type;
-  for (size_t i = 0; i < expr->memberAccess.indexCount; i++) {
-    VariableDeclaration *currentMember = (VariableDeclaration *)currentType->firstStatement;
-    for (size_t j = 0; j < expr->memberAccess.indices[i]; j++)
-      currentMember = (VariableDeclaration *)currentMember->next;
-    Identifier *memberIdent = currentMember->identifier;
-    printf(".%.*s", (int)memberIdent->name.length, memberIdent->name.string);
-    currentType = (TypeDeclaration *)currentMember->typeInfo.type;
-  }
 }
 
 void PrintBinaryOperation(BinaryOperation *binOp) {
@@ -356,13 +318,12 @@ CodePrinter& CodePrinter::operator<<(Expression *expression) {
     case ExpressionType_FloatLiteral: PrintFloatLiteral((FloatLiteral *)expression); break;
     case ExpressionType_StringLiteral: PrintStringLiteral((StringLiteral *)expression); break;
 
-    case ExpressionType_VariableExpression: PrintVariableExpression((VariableExpression *)expression); break;
+    case ExpressionType_VariableExpression: *this << (VariableExpression *)expression; break;
     case ExpressionType_ConstantExpression: PrintConstantExpression((ConstantExpression *)expression, std::cout); break;
     case ExpressionType_CallExpression: PrintCallExpression((CallExpression *)expression); break;
-    case ExpressionType_MemberAccessExpression: PrintMemberAccessExpression((MemberAccessExpression *)expression); break;
 
-    case ExpressionType_UnaryOperation: PrintUnaryOperation((UnaryOperation *)expression); break;
-    case ExpressionType_BinaryOperation: PrintBinaryOperation((BinaryOperation *)expression); break;
+    case ExpressionType_UnaryOperation: *this << (UnaryOperation *)expression; break;
+    case ExpressionType_BinaryOperation: *this << (BinaryOperation *)expression; break;
     case ExpressionType_CastExpression: *this << (CastExpression *)expression; break;
     case ExpressionType_SizeOfExpression: *this << (SizeOfExpression *)expression; break;
 
@@ -374,20 +335,15 @@ CodePrinter& CodePrinter::operator<<(Expression *expression) {
   return *this;
 }
 
-
-
 CodePrinter& CodePrinter::operator<<(VariableAssignment *varAssignment) {
-  Identifier *ident = varAssignment->varDecl->identifier;
-  *stream << ident->name.string;
-  TypeDeclaration *currentType = (TypeDeclaration *)varAssignment->varDecl->typeInfo.type;
-  for (size_t i = 0; i < varAssignment->memberAccess.indexCount; i++) {
-    VariableDeclaration *currentMember = (VariableDeclaration *)currentType->firstStatement;
-    for (size_t j = 0; j < varAssignment->memberAccess.indices[i]; j++)
-      currentMember = (VariableDeclaration *)currentMember->next;
-    Identifier *memberIdent = currentMember->identifier;
-    *stream << "." << memberIdent->name.string;
-    currentType = (TypeDeclaration *)currentMember->typeInfo.type;
-  }
+  *stream << &varAssignment->variableAccess;
+  *stream << " = ";
+  *stream << varAssignment->expression;
+  return *this;
+}
+
+CodePrinter& CodePrinter::operator<<(VariableExpression *expression) {
+  *this << &expression->variableAccess;
   return *this;
 }
 
@@ -412,10 +368,32 @@ CodePrinter& CodePrinter::operator<<(SizeOfExpression *expression) {
   return *this;
 }
 
+
+CodePrinter& CodePrinter::operator<<(UnaryOperation *unaryOp) {
+  for (size_t i = 0; i < unaryOp->unaryCount; i++)
+    *stream << TokenString[unaryOp->unaryToken];
+  *this << unaryOp->expression;
+  return *this;
+}
+
+CodePrinter& CodePrinter::operator<<(BinaryOperation *binOp) {
+  *this << binOp->lhs;
+  *stream << " " << TokenString[binOp->binopToken] << " ";
+  *this << binOp->rhs;
+  return *this;
+}
+
 //================================================================
 
 CodePrinter& CodePrinter::operator<<(ParameterInvokation *params) {
-  PrintParameterInvokation(params);
+  *stream << "(";
+  Expression *current = params->firstParameterExpression;
+  while (current != nullptr) {
+    *this << current;
+    current = current->next;
+    if (current != nullptr) *stream << ", ";
+  }
+  *stream << ")";
   return *this;
 }
 
@@ -434,6 +412,22 @@ CodePrinter& CodePrinter::operator<<(TypeInfo *typeInfo) {
   return *this;
 }
 
-CodePrinter& CodePrinter::operator<<(TypeMemberAccess *memberAccess) {
+CodePrinter& CodePrinter::operator<<(VariableAccess *va) {
+  VariableDeclaration *var = va->variable;
+  for (int i = 0; i < va->accessCount; i++) {
+    setColor(variableColor);
+    *stream << var->identifier->name.string;
+    setColor(defaultColor);
+    if (va->subscriptExpressions[i] != nullptr) {
+      *this << va->subscriptExpressions[i];
+    }
+
+    if (i + 1 < va->accessCount) {
+      var = GetVariableAtIndex(&var->typeInfo, va->indices[i + 1]);
+      *stream << ".";
+    }
+  }
+
   return *this;
 }
+

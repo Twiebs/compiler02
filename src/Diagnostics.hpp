@@ -77,6 +77,7 @@ public:
   std::ostream *stream;
 
   TerminalColor typeColor;
+  TerminalColor variableColor;
   TerminalColor expressionColor;
   TerminalColor defaultColor;
   TerminalColor keywordColor;
@@ -86,9 +87,11 @@ public:
   
   //Expression printers
   CodePrinter& operator<<(Expression *expression);
+  CodePrinter& operator<<(VariableExpression *expression);
   CodePrinter& operator<<(CastExpression *expression);
   CodePrinter& operator<<(SizeOfExpression *expression);
-  
+  CodePrinter& operator<<(UnaryOperation *expression);
+  CodePrinter& operator<<(BinaryOperation *binOp);
 
   //Single statement code printer procedures
   CodePrinter& operator<<(VariableAssignment *varAssign);
@@ -98,7 +101,7 @@ public:
   CodePrinter& operator<<(TypeInfo *typeInfo);
   CodePrinter& operator<<(ParameterInvokation *params);
   CodePrinter& operator<<(ParameterDeclaration *params);
-  CodePrinter& operator<<(TypeMemberAccess *memberAccess);
+  CodePrinter& operator<<(VariableAccess *variableAccess);
 };
 
 //This class wraps a abstract std::ostream and provides
@@ -124,7 +127,6 @@ void PrintProcedureDeclaration(ProcedureDeclaration *procDecl, int blockDepth = 
 void PrintVariableDeclaration(VariableDeclaration *varDecl);
 void PrintConstantDeclaration(ConstantDeclaration *c, std::ostream& s);
 
-void PrintVariableAssignment(VariableAssignment *varAssignment, int blockDepth = 0);
 void PrintCallStatement(CallStatement *callStatement);
 void PrintReturnStatement(ReturnStatement *returnStatement, int blockDepth = 0);
 void PrintWhileStatement(WhileStatement *ws, int blockDepth = 0);
@@ -135,13 +137,11 @@ void PrintIntegerLiteral(IntegerLiteral *intLiteral);
 void PrintFloatLiteral(FloatLiteral *floatLiteral);
 void PrintStringLiteral(StringLiteral *stringLiteral);
 
-void PrintVariableExpression(VariableExpression *varExpr);
 void PrintConstantExpression(ConstantExpression *ce, std::ostream& s);
 
 void PrintCallExpression(CallExpression *callExpr);
 void PrintBinaryOperation(BinaryOperation *binOp);
 void PrintUnaryOperation(UnaryOperation *unaryOp);
-void PrintMemberAccessExpression(MemberAccessExpression *memberAccessExpr);
 void PrintCastExpression(CastExpression *castExpr);
 
 void PrintParameterDeclaration(ParameterDeclaration *params);

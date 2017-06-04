@@ -73,6 +73,19 @@ bool IsBitwiseBinOp(TokenType type) {
   return false;
 }
 
+VariableDeclaration *GetVariableAtIndex(TypeInfo *type, size_t index) {
+  size_t i = 0;
+  VariableDeclaration *current = (VariableDeclaration *)type->type->firstStatement;
+  while (current != nullptr) {
+    assert(current->statementType == StatementType_VariableDeclaration);
+    if (i == index) {
+      return current;
+    }
+    current = (VariableDeclaration *)current->next;
+    i += 1;
+  }
+  return nullptr;
+}
 
 TypeInfo *GetSubTypeAtIndex(TypeInfo *type, size_t index) {
   VariableDeclaration *current = (VariableDeclaration *)type->type->firstStatement;

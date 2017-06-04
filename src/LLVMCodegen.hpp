@@ -54,7 +54,6 @@ llvm::Value *CodegenFloatLiteral(LLVMCodegenerator *cg, FloatLiteral *floatLiter
 llvm::Value *CodegenStringLiteral(LLVMCodegenerator *cg, StringLiteral *stringLiteral);
 
 llvm::Value *CodegenVariableExpression(LLVMCodegenerator *cg, VariableExpression *varExpr);
-llvm::Value *CodgenMemberAccessExpression(LLVMCodegenerator *cg, MemberAccessExpression *memberAccess);
 llvm::Value *CodegenCallExpression(LLVMCodegenerator *cg, CallExpression *expr);
 llvm::Value *CodegenConstantExpression(LLVMCodegenerator *cg, ConstantExpression *ce);
 

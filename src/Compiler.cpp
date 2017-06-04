@@ -61,6 +61,7 @@ void InitalizeCompiler(Compiler *compiler) {
   InitalizeAllocator(&compiler->astAllocator, 32768);
   compiler->printer.stream = &std::cout;
   compiler->printer.typeColor = TerminalColor::LightGreen;
+  compiler->printer.variableColor = TerminalColor::Blue;
   compiler->printer.expressionColor = TerminalColor::Blue;
   compiler->printer.defaultColor = TerminalColor::Default;
   compiler->printer.keywordColor = TerminalColor::Magenta;
@@ -195,9 +196,9 @@ bool RunFrontendAndBackend(Compiler *compiler) {
   if (compiler->errorCount > 0) return false;
   //PrintBlock(compiler->globalBlock);
   CodegenGlobalBlock(compiler, compiler->globalBlock);
-  #if 0
+  #if 1
   system("clang -O0 -S -emit-llvm test_software.c");
-  system("clang -O0 -g -lSDL2 test_software.c -o test_software");
+  system("clang -O0 -g -lSDL2 -lm test_software.c -o test_software");
   system("objdump -M intel -d test_software > test_software.dump");
   #endif
   return true;

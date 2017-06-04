@@ -50,7 +50,6 @@ enum ExpressionType {
   ExpressionType_UnaryOperation,
   ExpressionType_BinaryOperation,
 
-  ExpressionType_MemberAccessExpression,
   ExpressionType_CastExpression,
 
   ExpressionType_SizeOfExpression,
@@ -68,7 +67,6 @@ const char *ExpressionName[] = {
   "ExpressionType_CallExpression",
   "ExpressionType_UnaryOperation",
   "ExpressionType_BinaryOperation",
-  "ExpressionType_MemberAccessExpression",
   "ExpressionType_CastExpression",
 
   "ExpressionType_SizeOfExpression"
@@ -102,12 +100,17 @@ struct TypeDeclaration : Block {
   llvm::Type *llvmType;
 };
 
+
 struct TypeInfo {
   TypeDeclaration *type;
   bool isArray;
   int indirectionLevel;
   int arraySize;
 };
+
+//This struct is used for VariableAssigments and variable
+//expressions.  It shares the code for acessing struct members
+//And offseting by the subscript operator
 
 struct Expression {
   ExpressionType expressionType;
@@ -120,10 +123,6 @@ struct Expression {
 
 //=====================================================
 
-struct TypeMemberAccess {
-  uint32_t indexCount;
-  uint32_t *indices;
-};
 
 struct WhileStatement : Block {
   Expression *condition;
@@ -131,6 +130,8 @@ struct WhileStatement : Block {
 
 struct ElseStatement;
 
+
+//TODO Consolidate if and else statement @Refactor
 struct IfStatement : Block {
   Expression *condition;
   ElseStatement *elseStatement;
@@ -147,6 +148,20 @@ struct VariableDeclaration : Statement {
   Expression *initalExpression;
   llvm::Value *llvmAlloca;
 };
+
+struct AccessInfo {
+  int index;
+  SourceLocation location;
+  Expression *subscriptExpression;
+};
+
+struct VariableAccess {
+  VariableDeclaration *variable;
+  int accessCount;
+  uint32_t *indices;
+  Expression **subscriptExpressions;
+};
+
 
 struct ConstantDeclaration : Statement {
   Identifier *identifier;
@@ -176,13 +191,10 @@ struct ProcedureDeclaration : Block {
 };
 
 struct VariableAssignment : Statement {
-  VariableDeclaration *varDecl;
+  VariableAccess variableAccess;
+  TypeInfo typeInfo; //TypeOf final value
   Expression *expression;
-  Expression *subscriptExpression;
-  TypeMemberAccess memberAccess;
-  TypeInfo typeInfo;
 };
-
 
 struct CallStatement : Statement {
   ProcedureDeclaration *procedure;
@@ -208,13 +220,8 @@ struct UnaryOperation : Expression {
   Expression *expression;
 };
 
-struct MemberAccessExpression : Expression {
-  VariableDeclaration *varDecl;
-  TypeMemberAccess memberAccess;
-};
-
 struct VariableExpression : Expression {
-  VariableDeclaration *varDecl;
+  VariableAccess variableAccess;
 };
 
 struct ConstantExpression : Expression {
@@ -253,7 +260,8 @@ bool IsFloatType(TypeDeclaration *type, Compiler *compiler);
 
 bool IsLiteralExpression(Expression *e);
 
-TypeInfo *GetSubTypeAtIndex(TypeInfo *type, size_t index) ;
+TypeInfo *GetSubTypeAtIndex(TypeInfo *type, size_t index);
+VariableDeclaration *GetVariableAtIndex(TypeInfo *type, size_t index);
 bool IsBitwiseBinOp(TokenType type);
 
 bool Equals(TypeInfo *a, TypeInfo *b);
