@@ -11,6 +11,8 @@ struct LLVMCodegenerator {
   llvm::Module *module;
   llvm::IRBuilder<> *builder;
   Compiler *compiler;
+
+  ProcedureDeclaration *currentProcedure;
   llvm::Function *currentFunction;
 
   //Debug Info Creation
@@ -28,6 +30,8 @@ struct LLVMCodegenerator {
   void CreateDebugInfoForProcedure(ProcedureDeclaration *procedure);
 
 };
+
+static void CodegenReturnValuesForCurrentProcedure(LLVMCodegenerator *cg);
 
 void CodegenGlobalBlock(Compiler *compiler, Block *block);
 void CodegenStatement(LLVMCodegenerator *cg, Statement *statement);

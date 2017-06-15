@@ -89,9 +89,11 @@ public:
   CodePrinter& operator<<(Expression *expression);
   CodePrinter& operator<<(VariableExpression *expression);
   CodePrinter& operator<<(CastExpression *expression);
+  CodePrinter& operator<<(CallExpression *expression);
   CodePrinter& operator<<(SizeOfExpression *expression);
   CodePrinter& operator<<(UnaryOperation *expression);
   CodePrinter& operator<<(BinaryOperation *binOp);
+
 
   //Single statement code printer procedures
   CodePrinter& operator<<(VariableAssignment *varAssign);

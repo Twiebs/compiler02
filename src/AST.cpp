@@ -1,4 +1,5 @@
 
+
 Identifier *FindIdentifierInType(TypeDeclaration *typeDecl, Token token, uint32_t *index) {
   *index = 0;
   Identifier *currentIdent = typeDecl->firstIdentifier;
@@ -99,6 +100,20 @@ TypeInfo *GetSubTypeAtIndex(TypeInfo *type, size_t index) {
     i += 1;
   }
   return nullptr;
+}
+
+bool IsSimpleType(TypeDeclaration *type, Compiler *compiler) {
+  bool result = type == compiler->typeDeclU8 || 
+                type == compiler->typeDeclU16 || 
+                type == compiler->typeDeclU32 || 
+                type == compiler->typeDeclU64 || 
+                type == compiler->typeDeclS8 || 
+                type == compiler->typeDeclS16 || 
+                type == compiler->typeDeclS32 || 
+                type == compiler->typeDeclS64 ||
+                type == compiler->typeDeclF32 || 
+                type == compiler->typeDeclF64;
+  return result;
 }
 
 bool Equals(TypeInfo *a, TypeInfo *b) {

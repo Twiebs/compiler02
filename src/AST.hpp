@@ -162,6 +162,10 @@ struct VariableAccess {
   Expression **subscriptExpressions;
 };
 
+struct InitalizerExpression : Expression {
+  TypeDeclaration *type;
+  //InitalizerValue *firstValue;
+};
 
 struct ConstantDeclaration : Statement {
   Identifier *identifier;
@@ -183,8 +187,8 @@ struct ParameterInvokation {
 
 struct ProcedureDeclaration : Block {
   Identifier *identifier;
-  ParameterDeclaration params;
-  TypeInfo returnTypeInfo;
+  ParameterDeclaration inputParameters;
+  ParameterDeclaration outputParameters;
   bool isForeign;
 
   llvm::Function *llvmFunction;
@@ -202,7 +206,6 @@ struct CallStatement : Statement {
 };
 
 struct ReturnStatement : Statement {
-  Expression *returnValue;
 };
 
 //Expressions
@@ -257,6 +260,7 @@ bool IsUnsignedIntegerType(TypeDeclaration *type, Compiler *compiler);
 bool IsSignedIntegerType(TypeDeclaration *type, Compiler *compiler);
 bool IsIntegerType(TypeDeclaration *type, Compiler *compiler);
 bool IsFloatType(TypeDeclaration *type, Compiler *compiler);
+bool IsSimpleType(TypeDeclaration *type, Compiler *compiler);
 
 bool IsLiteralExpression(Expression *e);
 

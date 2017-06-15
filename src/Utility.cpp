@@ -41,6 +41,54 @@ StringReference AllocateString(PersistantBlockAllocator *allocator, const char *
 
 //=============================================================================
 
+TemporaryString::TemporaryString(const char *fmt, ...) {
+  used = 0;
+  dynamicString = nullptr;
+  va_list args;
+  va_start(args, fmt);
+  int charCount = vsnprintf(buffer, sizeof(buffer) - used, fmt, args);
+  if (charCount > sizeof(buffer) - used) {
+    dynamicString = (char *)malloc(charCount + 1);
+    vsnprintf(dynamicString, charCount, fmt, args);
+  } else {
+    used += charCount;
+  }
+}
+
+TemporaryString::~TemporaryString() {
+  if (dynamicString != nullptr) {
+    free(dynamicString);
+  }
+}
+
+void TemporaryString::set(const char *fmt, ...) {
+  if (dynamicString != nullptr) {
+    free(dynamicString);
+  }
+
+  used = 0;
+  dynamicString = nullptr;
+  va_list args;
+  va_start(args, fmt);
+  int charCount = vsnprintf(buffer, sizeof(buffer) - used, fmt, args);
+  if (charCount > sizeof(buffer) - used) {
+    dynamicString = (char *)malloc(charCount + 1);
+    vsnprintf(dynamicString, charCount, fmt, args);
+  } else {
+    used += charCount;
+  }
+}
+
+const char *TemporaryString::getString() {
+  if (dynamicString != nullptr) {
+    return (const char *)dynamicString;
+  } else {
+    return (const char *)buffer;
+  }
+}
+
+//=============================================================================
+
 bool Equals(StringReference a, const char *b, size_t length) {
   if (a.length != length) return false;
   for (size_t i = 0; i < length; i++) {

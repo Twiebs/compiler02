@@ -236,24 +236,18 @@ void LexStringLiteral(Lexer *lex, Token *token) {
   }
 }
 
-//A realitivly ineffiecant procedure to tokenize the current
-//position of the lexer within the buffer.  Does a signfigant
-//ineffeicant amount of string comparing for simplicity during
-//prototyping phase.
-Token GetToken(Lexer *lex) {
-  Token token = {};
-  token.location.fileID = lex->fileID;
 
+static bool LexIndentationAsBlocks(Lexer *lex, Token *token) {
   if (lex->nextIndentLevel > lex->currentIndentLevel) {
-    token.type = TokenType_BlockOpen;
+    token->type = TokenType_BlockOpen;
     lex->currentIndentLevel += 1;
-    token.tokenID = lex->internalTokenCounter++;
-    return token;
+    token->tokenID = lex->internalTokenCounter++;
+    return true;
   } else if (lex->nextIndentLevel < lex->currentIndentLevel) {
-    token.type = TokenType_BlockClose;
+    token->type = TokenType_BlockClose;
     lex->currentIndentLevel -= 1;
-    token.tokenID = lex->internalTokenCounter++;
-    return token;
+    token->tokenID = lex->internalTokenCounter++;
+    return true;
   }
 
   //Eat any trailing spaces
@@ -277,9 +271,22 @@ Token GetToken(Lexer *lex) {
       lex->nextIndentLevel = lex->currentIndentLevel;
     }
 
-    return GetToken(lex);
+    *token = GetToken(lex);
+    return true;
+  }
 
+  return false;
+}
 
+//A realitivly ineffiecant procedure to tokenize the current
+//position of the lexer within the buffer.  Does a signfigant
+//ineffeicant amount of string comparing for simplicity during
+//prototyping phase.
+Token GetToken(Lexer *lex) {
+  Token token = {};
+  token.location.fileID = lex->fileID;
+  if (LexIndentationAsBlocks(lex, &token)) {
+    return token;
   }
 
 
@@ -399,6 +406,8 @@ Token GetToken(Lexer *lex) {
   //Usefull during prototying to get things done quick
   else if (SetTokenTypeIfMatchAndAppend(TokenType_ParenOpen, LiteralAndLength("("))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_ParenClose, LiteralAndLength(")"))) return token;
+  else if (SetTokenTypeIfMatchAndAppend(TokenType_BraceOpen, LiteralAndLength("{"))) return token;
+  else if (SetTokenTypeIfMatchAndAppend(TokenType_BraceClose, LiteralAndLength("}"))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_ArrayOpen, LiteralAndLength("["))) return token;
   else if (SetTokenTypeIfMatchAndAppend(TokenType_ArrayClose, LiteralAndLength("]"))) return token;
 

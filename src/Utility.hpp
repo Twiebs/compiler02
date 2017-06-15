@@ -23,6 +23,21 @@ struct StringReference {
   char *string;
 };
 
+
+class TemporaryString {
+public:
+  TemporaryString(const char *fmt, ...);
+  ~TemporaryString();
+
+  void set(const char *fmt, ...);
+  const char *getString();
+
+private:
+  char buffer[4096];
+  int used = 0;
+  char *dynamicString;
+};
+
 //TODO Make a better robust version of this
 class TempStringBuilder {
   char buffer[256];
@@ -31,11 +46,16 @@ class TempStringBuilder {
 public:
   TempStringBuilder() : used(0) {}
 
-  void append(const char *s) {
+  TempStringBuilder& append(const char *s) {
     while (*s != 0) {
       buffer[used++] = *s;
       s++;
     }
+    return *this;
+  }
+
+  void clear() {
+    used = 0;
   }
 
   char *get() {

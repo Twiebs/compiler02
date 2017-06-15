@@ -1,8 +1,18 @@
 
+Stuff :: TYPE
+  cuteness: F32
+  fluffiness: F32
+
+TypeA :: TYPE
+  thing: S32
+  stuff: Stuff
+
 add :: (a: S32, b: S32)(result: S32)
   result = a + b
 
 
 main :: ()(errorCode: S32)
+  doodad: TypeA = { thing: 4, stuff: { fluffiness: 7.2 } } 
+
   foo: S32 = add(2, 4)
   errorCode = 0

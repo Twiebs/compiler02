@@ -133,7 +133,7 @@ void CodegenBlock(LLVMCodegenerator *cg, Block *block) {
   }
 }
 
-bool WriteNativeObjectToFile(llvm::Module *module) {
+bool WriteNativeObjectToFile(Compiler *compiler, llvm::Module *module, const char *file) {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmPrinters();
@@ -175,7 +175,7 @@ bool WriteNativeObjectToFile(llvm::Module *module) {
 
   std::error_code errorCode;
   llvm::sys::fs::OpenFlags flags = (llvm::sys::fs::OpenFlags)0;
-  llvm::raw_fd_ostream llvmStream("test.o", errorCode, flags);
+  llvm::raw_fd_ostream llvmStream(file, errorCode, flags);
   tm->addPassesToEmitFile(passManager, llvmStream, fileType);
   passManager.run(*module);
   llvmStream.flush();
@@ -206,18 +206,25 @@ void CodegenGlobalBlock(Compiler *compiler, Block *block) {
   CodegenBlock(&llvmCG, block);
 
   llvm::raw_os_ostream stdoutStream(std::cout);
+  TemporaryString s("%s%s.o", compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str());
   if (llvm::verifyModule(*llvmCG.module, &stdoutStream) == false) {
-    llvmCG.module->dump();
-    WriteNativeObjectToFile(llvmCG.module);
-    system("objdump -M intel -d test.o > test.asm");
-    system("clang++ -O0 -lSDL2 test.o -o test");
-    system("objdump -M intel -d test > test.dump");
+    WriteNativeObjectToFile(compiler, llvmCG.module, s.getString());
+    s.set("objdump -M intel -d %s%s.o > %s%s.asm",
+      compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str(),
+      compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str());
+    system(s.getString());
+
+    s.set("clang -O0 -g -lSDL2 -lm %s%s.o -o %s%s", 
+      compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str(), 
+      compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str());
+    system(s.getString());
   } else {
     ReportError(compiler, "\n\nFAILED TO VERIFY LLVM MODULE");
   }
 
   {
-    std::ofstream stream("test.ll");
+    s.set("%s%s.ll", compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str());
+    std::ofstream stream(s.getString());
     llvm::raw_os_ostream llvmStream(stream);
     llvmCG.module->print(llvmStream, nullptr);
   }
@@ -284,8 +291,8 @@ static void GenerateLinearizedAllocasForBlock(LLVMCodegenerator *cg, Block *bloc
 }
 
 void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *procDecl) {
-  llvm::Type **argumentTypes = (llvm::Type **)alloca(sizeof(llvm::Type *) * procDecl->params.parameterCount);
-  VariableDeclaration *currentDecl = procDecl->params.firstParameter;
+  llvm::Type **argumentTypes = (llvm::Type **)alloca(sizeof(llvm::Type *) * procDecl->inputParameters.parameterCount);
+  VariableDeclaration *currentDecl = procDecl->inputParameters.firstParameter;
   size_t currentArgumentIndex = 0;
   while (currentDecl != nullptr) {
     assert(currentDecl->statementType == StatementType_VariableDeclaration);
@@ -294,26 +301,32 @@ void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *pr
   }
 
   llvm::Type *returnType = llvm::Type::getVoidTy(*cg->context);
-  if (procDecl->returnTypeInfo.type != nullptr)
-    returnType = GetLLVMType(cg, &procDecl->returnTypeInfo);
+  if (procDecl->outputParameters.parameterCount > 0)
+    returnType = GetLLVMType(cg, &procDecl->outputParameters.firstParameter->typeInfo);
 
-  llvm::ArrayRef<llvm::Type *> arrayRef(argumentTypes, procDecl->params.parameterCount);
+  llvm::ArrayRef<llvm::Type *> arrayRef(argumentTypes, procDecl->inputParameters.parameterCount);
   llvm::FunctionType *functionType = llvm::FunctionType::get(returnType, arrayRef, false);
   llvm::Function::LinkageTypes linkage = llvm::Function::ExternalLinkage;
   llvm::Function *llvmFunction = llvm::Function::Create(functionType, linkage,
     procDecl->identifier->name.string, cg->module);
   procDecl->llvmFunction = llvmFunction;
 
+  //We need to know the context a return statement is found in
+  //So we save the last procedure and update it with the procedure we are
+  //about to generate.  The state is restored when this proc exits
+  llvm::Function *lastFunction = cg->currentFunction;
+  ProcedureDeclaration *lastProcedure = cg->currentProcedure;
+  cg->currentFunction = llvmFunction;
+  cg->currentProcedure = procDecl;
+
   if (procDecl->statementCount > 0) {
-    llvm::Function *lastFunction = cg->currentFunction;
-    cg->currentFunction = llvmFunction;
     llvm::BasicBlock *lastBlock = cg->builder->GetInsertBlock();
     llvm::BasicBlock *entryBlock = llvm::BasicBlock::Create(*cg->context, "entry", llvmFunction);
 
     cg->builder->SetInsertPoint(entryBlock);
 
     { //Allocate storage for params on stack and store values
-      VariableDeclaration *currentDecl = procDecl->params.firstParameter;
+      VariableDeclaration *currentDecl = procDecl->inputParameters.firstParameter;
       for (auto iter = llvmFunction->arg_begin(); iter != llvmFunction->arg_end(); iter++) {
         llvm::Value *arraySize = nullptr;
         TempStringBuilder sb;
@@ -323,11 +336,20 @@ void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *pr
         currentDecl = (VariableDeclaration *)currentDecl->next;
       }
 
-      currentDecl = procDecl->params.firstParameter;
+      currentDecl = procDecl->inputParameters.firstParameter;
       for (auto iter = llvmFunction->arg_begin(); iter != llvmFunction->arg_end(); iter++) {
         llvm::Value *value = (llvm::Value *)&(*iter);
         cg->builder->CreateStore(value, currentDecl->llvmAlloca);
         currentDecl = (VariableDeclaration *)currentDecl->next;
+      }
+
+
+      if (procDecl->outputParameters.parameterCount > 0) {
+        currentDecl = procDecl->outputParameters.firstParameter;
+        TempStringBuilder sb;
+        sb.append(currentDecl->identifier->name.string);
+        sb.append(".stack_addr");
+        currentDecl->llvmAlloca = cg->builder->CreateAlloca(GetLLVMType(cg, &currentDecl->typeInfo), nullptr, sb.get());
       }
     }
 
@@ -340,9 +362,12 @@ void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *pr
       currentStatement = currentStatement->next;
     }
 
-    if (procDecl->returnTypeInfo.type == nullptr) cg->builder->CreateRetVoid();
-    cg->currentFunction = lastFunction;
+    CodegenReturnValuesForCurrentProcedure(cg);
   }
+
+  //Restore the last procedure context
+  cg->currentFunction = lastFunction;
+  cg->currentProcedure = lastProcedure;
 }
 
 void CodegenVariableDeclaration(LLVMCodegenerator *cg, VariableDeclaration *varDecl) {
@@ -429,9 +454,18 @@ void CodegenCallStatement(LLVMCodegenerator *cg, CallStatement *callStatement) {
   llvm::Value *value = cg->builder->CreateCall(callStatement->procedure->llvmFunction, arrayRef);
 }
 
+static void CodegenReturnValuesForCurrentProcedure(LLVMCodegenerator *cg) {
+  if (cg->currentProcedure->outputParameters.parameterCount > 0) {
+    VariableDeclaration *currentDecl = cg->currentProcedure->outputParameters.firstParameter;
+    llvm::Value *load = cg->builder->CreateLoad(currentDecl->llvmAlloca);
+    cg->builder->CreateRet(load);
+  } else {
+    cg->builder->CreateRetVoid();
+  }
+}
+
 void CodegenReturnStatement(LLVMCodegenerator *cg, ReturnStatement *returnStatement) {
-  llvm::Value *value = CodegenExpression(cg, returnStatement->returnValue);
-  llvm::Value *ret = cg->builder->CreateRet(value);
+  CodegenReturnValuesForCurrentProcedure(cg);
 }
 
 llvm::Value *CodegenIntegerLiteral(LLVMCodegenerator *cg, IntegerLiteral *intLiteral) {

@@ -2,7 +2,7 @@
 bool ValidateStatement(Compiler *compiler, Statement *statement) {
   switch(statement->statementType) {
     case StatementType_VariableDeclaration: return ValidateVariableDeclaration(compiler, (VariableDeclaration *)statement);
-    case StatementType_ProcedureDeclaration: return ValidateProcedureDeclaration(compiler, (ProcedureDeclaration *)statement);
+    case StatementType_ProcedureDeclaration: ValidateProcedureDeclaration(compiler, (ProcedureDeclaration *)statement); return true; break;
     case StatementType_TypeDeclaration: return ValidateTypeDeclaration((TypeDeclaration *)statement);
     case StatementType_ConstantDeclaration: return ValidateConstantDeclaration(compiler, (ConstantDeclaration *)statement);
 
@@ -49,12 +49,12 @@ bool ValidateExpression(Compiler *c, Expression *expr) {
 }
 
 bool ValidateCallExpression(Compiler *c, CallExpression *call) {
-  if (call->procedure->returnTypeInfo.type == nullptr) {
+  if (call->procedure->outputParameters.parameterCount == 0) {
     ReportErrorC(c, call->location, "Call to procedure " << call->procedure->identifier <<
     " is being used as an expression but the return type is Void\n");
-    return false;
   }
 
+  call->typeInfo = call->procedure->outputParameters.firstParameter->typeInfo;
   ValidateParameterInvokation(c, &call->params, call->location); 
   return true;
 }
@@ -82,7 +82,7 @@ bool ValidateWhileStatement(Compiler *c, WhileStatement *ws) {
 }
 
 bool ValidateReturnStatement(Compiler *compiler, ReturnStatement *returnStatement) {
-  return ValidateExpression(compiler, returnStatement->returnValue);
+  return true;
 }
 
 
@@ -332,14 +332,28 @@ bool ValidateVariableDeclaration(Compiler *compiler, VariableDeclaration *varDec
   return true;
 }
 
-bool ValidateProcedureDeclaration(Compiler *compiler, ProcedureDeclaration *procDecl) {
-  return ValidateBlock(compiler, procDecl);
+void ValidateProcedureDeclaration(Compiler *compiler, ProcedureDeclaration *procDecl) {
+  //ValidateParameterDeclaration(procDecl->inputParameters);
+  //ValidateParametersDeclaration(procDecl->outputParameters);
+  if (procDecl->outputParameters.parameterCount > 1) {
+    ReportErrorC(compiler, procDecl->location, "Compiler does noy support " <<
+      "multipule return values at this time");
+  }
+  ValidateBlock(compiler, procDecl);
 }
 
 bool ValidateBlock(Compiler *compiler, Block *block) {
   Statement *statement = block->firstStatement;
+  bool returnStatementSeen = false;
   while (statement != nullptr) {
+    if (returnStatementSeen) {
+      ReportErrorC(compiler, statement->location, "Cannot declare statement after return\n");
+    }
     ValidateStatement(compiler, statement);
+
+    if (statement->statementType == StatementType_ReturnStatement) {
+      returnStatementSeen = true;
+    }
     statement = statement->next;
   }
   return true;

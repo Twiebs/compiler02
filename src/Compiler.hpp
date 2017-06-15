@@ -3,8 +3,17 @@ struct SourceFile {
   StringReference absolutePath;
 };
 
+struct BuildSettings {
+  std::string projectName;
+  std::string outputDirectory;
+  int optimizationLevel;
+  bool emitLLVMIR;
+  bool emitReadableCCode;
+};
+
 struct Compiler {
   std::string currentWorkingDirectory;
+  BuildSettings settings;
 
   std::vector<SourceFile> sourceFiles;
   PersistantBlockAllocator stringAllocator;

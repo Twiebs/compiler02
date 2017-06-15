@@ -7,6 +7,8 @@ clang++ -lLLVM-4.0 compiler.o -o compiler
 exit
 #endif
 
+//TODO Error when not finding import file
+
 #include <assert.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -74,7 +76,13 @@ void InitalizeCompiler(Compiler *compiler) {
 
   compiler->currentWorkingDirectory = std::string(cwd);
   compiler->currentWorkingDirectory.append("/");
-  
+
+  //TODO make sure otput directory exists
+  BuildSettings& settings = compiler->settings;
+  settings.projectName = "project";
+  settings.outputDirectory = "output/";
+  settings.emitLLVMIR = true;
+  settings.emitReadableCCode = true;
   //This is a crazy hack to generate statements in a global
   //block because these procedures currently take a parser pointer
   Parser parser = {};
@@ -179,28 +187,44 @@ bool HandleCommandLineArguments(Compiler *compiler, int argc, const char **argv)
   return true;
 }
 
-bool RunFrontendAndBackend(Compiler *compiler) {
+bool BuildProject(Compiler *compiler) {
   ParseEntireFile(compiler, 0);
   if (ValidateBlock(compiler, compiler->globalBlock) == false) {
     return false;
   }
 
-  {
-    auto stream = std::ofstream("test_software.c");
-    CodeGenEntireAST(compiler, stream);
+
+  if (compiler->errorCount > 0) return false;
+  CodegenGlobalBlock(compiler, compiler->globalBlock);
+
+  if (compiler->settings.emitReadableCCode) {
+    printf("Emitting Readable C Code\n");
+    TemporaryString s("%s%s_cbackend.c", compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str());
+    auto stream = std::ofstream(s.getString());
+    ReadableCBackend readableCBackend = {};
+    readableCBackend.CodeGenEntireAST(compiler, stream);
+
+    //Emit the LLVM IR for the C Backend
+    s.set("clang -O0 -S -emit-llvm %s%s_cbackend.c -o %s%s_cbackend.ll", 
+      compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str(), 
+      compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str());
+    system(s.getString());
+
+    s.set("clang -O0 -g -c %s%s_cbackend.c -o %s%s_cbackend.o", 
+      compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str(), 
+      compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str());
+    system(s.getString());
+
+    s.set("clang -lSDL2 -lm %s%s_cbackend.o -o %s%s_cbackend",
+      compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str(), 
+      compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str());
+    system(s.getString());
+    
+    //system("objdump -M intel -d test_software > test_software.dump");
   }
 
 
 
-
-  if (compiler->errorCount > 0) return false;
-  //PrintBlock(compiler->globalBlock);
-  CodegenGlobalBlock(compiler, compiler->globalBlock);
-  #if 1
-  system("clang -O0 -S -emit-llvm test_software.c");
-  system("clang -O0 -g -lSDL2 -lm test_software.c -o test_software");
-  system("objdump -M intel -d test_software > test_software.dump");
-  #endif
   return true;
 }
 
@@ -211,7 +235,7 @@ int main(int argc, const char **argv) {
     return -1;
   }
 
-  RunFrontendAndBackend(&compiler);
+  BuildProject(&compiler);
 
 
   return 0;

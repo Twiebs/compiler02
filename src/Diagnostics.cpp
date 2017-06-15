@@ -233,11 +233,8 @@ void PrintConstantDeclaration(ConstantDeclaration *c, std::ostream& s) {
 void PrintProcedureDeclaration(ProcedureDeclaration *procDecl, int blockDepth) {
   Identifier *ident = procDecl->identifier;
   printf("%.*s :: ", (int)ident->name.length, ident->name.string);
-  PrintParameterDeclaration(&procDecl->params);
-  if (procDecl->returnTypeInfo.type != 0) {
-    printf(" >> ");
-    PrintTypeInfo(&procDecl->returnTypeInfo, std::cout);
-  }
+  PrintParameterDeclaration(&procDecl->inputParameters);
+  //TODO removed outputs
 
   printf("\n");
   Statement *currentStatement = procDecl->firstStatement;
@@ -256,8 +253,7 @@ void PrintCallStatement(CallStatement *callStatement) {
 }
 
 void PrintReturnStatement(ReturnStatement *returnStatement, int blockDepth) {
-  printf("RETURN ");
-  PrintExpression(returnStatement->returnValue);
+  printf("RETURN");
 }
 
 void PrintIntegerLiteral(IntegerLiteral *intLiteral) {
@@ -320,7 +316,7 @@ CodePrinter& CodePrinter::operator<<(Expression *expression) {
 
     case ExpressionType_VariableExpression: *this << (VariableExpression *)expression; break;
     case ExpressionType_ConstantExpression: PrintConstantExpression((ConstantExpression *)expression, std::cout); break;
-    case ExpressionType_CallExpression: PrintCallExpression((CallExpression *)expression); break;
+    case ExpressionType_CallExpression: *this << (CallExpression *)expression; break;
 
     case ExpressionType_UnaryOperation: *this << (UnaryOperation *)expression; break;
     case ExpressionType_BinaryOperation: *this << (BinaryOperation *)expression; break;
@@ -355,6 +351,13 @@ CodePrinter& CodePrinter::operator<<(CastExpression *cast) {
   *this << &cast->typeInfo;
   *stream << ")";
   *this << cast->expression;
+  return *this;
+}
+
+CodePrinter& CodePrinter::operator<<(CallExpression *callExpr) {
+  Identifier *procIdent = callExpr->procedure->identifier;
+  *stream << procIdent->name.string;
+  *this << &callExpr->params;
   return *this;
 }
 

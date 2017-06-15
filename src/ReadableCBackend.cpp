@@ -1,11 +1,15 @@
 
-void CodeGenEntireAST(Compiler *c, std::ostream& stream) {
+void ReadableCBackend::CodeGenEntireAST(Compiler *c, std::ostream& stream) {
   stream << "#include <stdint.h>\n";
-  stream << "#include <stddef.h>\n\n";
+  stream << "#include <stddef.h>\n";
+  stream << "#pragma clang diagnostic ignored \"-Wpointer-sign\"\n";
+  stream << "#pragma clang diagnostic ignored \"-Wparentheses-equality\"\n";
+  stream << "#pragma clang diagnostic ignored \"-Wincompatible-library-redeclaration\"\n\n";
   CodeGenBlock(c->globalBlock, stream, 0);
+  stream.flush();
 }
 
-void CodeGenStatement(Statement *statement, std::ostream& stream, int blockDepth) {
+void ReadableCBackend::CodeGenStatement(Statement *statement, std::ostream& stream, int blockDepth) {
   CodeGenBlockDepthSpaces(blockDepth, stream);
   switch (statement->statementType) {
     case StatementType_Block: CodeGenBlock((Block *)statement, stream, blockDepth); break;
@@ -26,7 +30,7 @@ void CodeGenStatement(Statement *statement, std::ostream& stream, int blockDepth
   };
 }
 
-void CodeGenExpression(Expression *expression, std::ostream& stream) {
+void ReadableCBackend::CodeGenExpression(Expression *expression, std::ostream& stream) {
   switch (expression->expressionType) {
     case ExpressionType_IntegerLiteral: CodeGenIntegerLiteral((IntegerLiteral *)expression, stream); break;
     case ExpressionType_FloatLiteral: CodeGenFloatLiteral((FloatLiteral *)expression, stream); break;
@@ -49,13 +53,13 @@ void CodeGenExpression(Expression *expression, std::ostream& stream) {
   };
 }
 
-void CodeGenBlockDepthSpaces(int blockDepth, std::ostream& stream) {
+void ReadableCBackend::CodeGenBlockDepthSpaces(int blockDepth, std::ostream& stream) {
   for (int i = 0; i < blockDepth; i++) {
     stream << "  ";
   }
 }
 
-void CodeGenTypeNameAndPointers(TypeInfo *typeInfo, std::ostream& stream) {
+void ReadableCBackend::CodeGenTypeNameAndPointers(TypeInfo *typeInfo, std::ostream& stream) {
   Identifier *typeIdent = typeInfo->type->identifier;
 
   //too lazy for compiler pointer here so excessive string compares ftw @Optimize
@@ -86,12 +90,12 @@ void CodeGenTypeNameAndPointers(TypeInfo *typeInfo, std::ostream& stream) {
   for (size_t i = 0; i < typeInfo->indirectionLevel; i++) stream << "*";
 }
 
-void CodeGenTypeArraySize(TypeInfo *typeInfo, std::ostream& stream) {
+void ReadableCBackend::CodeGenTypeArraySize(TypeInfo *typeInfo, std::ostream& stream) {
   if (typeInfo->arraySize > 0)
     stream << "[" << typeInfo->arraySize << "]";
 }
 
-void CodeGenParameterDeclaration(ParameterDeclaration *params, std::ostream& stream) {
+void ReadableCBackend::CodeGenParameterDeclaration(ParameterDeclaration *params, std::ostream& stream) {
   stream << "(";
   VariableDeclaration *current = params->firstParameter;
   while (current != nullptr) {
@@ -103,7 +107,7 @@ void CodeGenParameterDeclaration(ParameterDeclaration *params, std::ostream& str
   stream << ")";
 }
 
-void CodeGenParameterInvokation(ParameterInvokation *params, std::ostream& stream) {
+void ReadableCBackend::CodeGenParameterInvokation(ParameterInvokation *params, std::ostream& stream) {
   stream << "(";
   Expression *current = params->firstParameterExpression;
   while (current != nullptr) {
@@ -114,7 +118,7 @@ void CodeGenParameterInvokation(ParameterInvokation *params, std::ostream& strea
   stream << ")";
 }
 
-void CodeGenVariableAccess(VariableAccess *va, std::ostream& stream) {
+void ReadableCBackend::CodeGenVariableAccess(VariableAccess *va, std::ostream& stream) {
   VariableDeclaration *currentVar = va->variable;
   for (size_t i = 0; i < va->accessCount; i++) {
     if (i != 0) {
@@ -145,7 +149,7 @@ void CodeGenVariableAccess(VariableAccess *va, std::ostream& stream) {
 //===========================================================================================
 //============================================================================================
 
-void CodeGenBlock(Block *block, std::ostream& stream, int blockDepth) {
+void ReadableCBackend::CodeGenBlock(Block *block, std::ostream& stream, int blockDepth) {
   Statement *currentStatement = block->firstStatement;
   while (currentStatement != nullptr) {
     CodeGenStatement(currentStatement, stream, blockDepth);
@@ -154,32 +158,46 @@ void CodeGenBlock(Block *block, std::ostream& stream, int blockDepth) {
   }
 }
 
-void CodeGenTypeDeclaration(TypeDeclaration *typeDecl, std::ostream& stream, int blockDepth) {
+void ReadableCBackend::CodeGenTypeDeclaration(TypeDeclaration *typeDecl, std::ostream& stream, int blockDepth) {
   stream << "typedef struct {\n";
   CodeGenBlock(typeDecl, stream, blockDepth + 1);
   Identifier *ident = typeDecl->identifier;
   stream << "} " << ident->name.string << ";\n";
 }
 
-void CodeGenProcedureDeclaration(ProcedureDeclaration *procDecl, std::ostream& stream, int blockDepth) {
-  if (procDecl->returnTypeInfo.type != 0) {
-    CodeGenTypeNameAndPointers(&procDecl->returnTypeInfo, stream);
+void ReadableCBackend::CodeGenProcedureDeclaration(ProcedureDeclaration *procDecl, std::ostream& stream, int blockDepth) {
+  ProcedureDeclaration *lastProcedure = currentProcedure;
+  currentProcedure = procDecl;
+
+  if (procDecl->outputParameters.parameterCount != 0) {
+    CodeGenTypeNameAndPointers(&procDecl->outputParameters.firstParameter->typeInfo, stream);
   } else {
     stream << "void";
   }
 
   stream << " " << procDecl->identifier->name.string;
-  CodeGenParameterDeclaration(&procDecl->params, stream);
+  CodeGenParameterDeclaration(&procDecl->inputParameters, stream);
   if (procDecl->isForeign == false) {
     stream << " {\n";
+    if (procDecl->outputParameters.parameterCount != 0) {
+      CodeGenBlockDepthSpaces(blockDepth + 1, stream);
+      CodeGenVariableDeclaration(procDecl->outputParameters.firstParameter, stream);
+      stream << "\n";
+    }
+    
     CodeGenBlock(procDecl, stream, blockDepth + 1);
+    if (procDecl->outputParameters.parameterCount != 0) {
+      stream << "  return " << procDecl->outputParameters.firstParameter->identifier->name.string << ";\n";
+    }
     stream << "}\n";
   } else {
     stream << ";\n";
   }
+
+  currentProcedure = lastProcedure;
 }
 
-void CodeGenWhileStatement(WhileStatement *ws, std::ostream& stream, int blockDepth) {
+void ReadableCBackend::CodeGenWhileStatement(WhileStatement *ws, std::ostream& stream, int blockDepth) {
   stream << "while (";
   CodeGenExpression(ws->condition, stream);
   stream << ") {\n";
@@ -188,7 +206,7 @@ void CodeGenWhileStatement(WhileStatement *ws, std::ostream& stream, int blockDe
   stream << "}";
 }
 
-void CodeGenIfStatement(IfStatement *is, std::ostream& stream, int blockDepth) {
+void ReadableCBackend::CodeGenIfStatement(IfStatement *is, std::ostream& stream, int blockDepth) {
   stream << "if (";
   CodeGenExpression(is->condition, stream);
   stream << ") {\n";
@@ -215,7 +233,7 @@ void CodeGenIfStatement(IfStatement *is, std::ostream& stream, int blockDepth) {
 
 //====================================================
 
-void CodeGenVariableDeclaration(VariableDeclaration *varDecl, std::ostream& stream) {
+void ReadableCBackend::CodeGenVariableDeclaration(VariableDeclaration *varDecl, std::ostream& stream) {
   CodeGenTypeNameAndPointers(&varDecl->typeInfo, stream);
   stream << " " << varDecl->identifier->name.string;
   CodeGenTypeArraySize(&varDecl->typeInfo, stream);
@@ -226,43 +244,46 @@ void CodeGenVariableDeclaration(VariableDeclaration *varDecl, std::ostream& stre
   stream << ";";
 }
 
-void CodeGenConstantDeclaration(ConstantDeclaration *c, std::ostream& stream) {
+void ReadableCBackend::CodeGenConstantDeclaration(ConstantDeclaration *c, std::ostream& stream) {
   CodeGenTypeNameAndPointers(&c->typeInfo, stream);
   stream << " " << c->identifier->name.string << " = ";
   CodeGenExpression(c->expression, stream);
   stream << ";";
 }
 
-void CodeGenVariableAssignment(VariableAssignment *varAssignment, std::ostream& stream) {
+void ReadableCBackend::CodeGenVariableAssignment(VariableAssignment *varAssignment, std::ostream& stream) {
   CodeGenVariableAccess(&varAssignment->variableAccess, stream);
   stream << " = ";
   CodeGenExpression(varAssignment->expression, stream);
   stream << ";";
 }
 
-void CodeGenCallStatement(CallStatement *callStatement, std::ostream& stream) {
+void ReadableCBackend::CodeGenCallStatement(CallStatement *callStatement, std::ostream& stream) {
   stream << callStatement->procedure->identifier->name.string;
   CodeGenParameterInvokation(&callStatement->params, stream);
   stream << ";";
 }
 
-void CodeGenReturnStatement(ReturnStatement *returnStatement, std::ostream& stream) {
-  stream << "return ";
-  CodeGenExpression(returnStatement->returnValue, stream);
-  stream << ";";
+void ReadableCBackend::CodeGenReturnStatement(ReturnStatement *returnStatement, std::ostream& stream) {
+  assert(currentProcedure != nullptr);
+  if (currentProcedure->outputParameters.parameterCount > 0) {
+    stream << "return " << currentProcedure->outputParameters.firstParameter->identifier->name.string << ";";
+  } else {
+    stream << "return;";
+  }
 }
 
 //===============================================================
 
-void CodeGenIntegerLiteral(IntegerLiteral *intLiteral, std::ostream& stream) {
+void ReadableCBackend::CodeGenIntegerLiteral(IntegerLiteral *intLiteral, std::ostream& stream) {
   stream << intLiteral->unsignedValue;
 }
 
-void CodeGenFloatLiteral(FloatLiteral *floatLiteral, std::ostream& stream) {
+void ReadableCBackend::CodeGenFloatLiteral(FloatLiteral *floatLiteral, std::ostream& stream) {
   stream << floatLiteral->value;
 }
 
-void CodeGenStringLiteral(StringLiteral *stringLiteral, std::ostream& stream) {
+void ReadableCBackend::CodeGenStringLiteral(StringLiteral *stringLiteral, std::ostream& stream) {
   stream << "\"";
   for (int i = 0; i < stringLiteral->value.length; i++) {
     if (stringLiteral->value.string[i] == '\n') {
@@ -274,21 +295,21 @@ void CodeGenStringLiteral(StringLiteral *stringLiteral, std::ostream& stream) {
   stream << "\"";
 }
 
-void CodeGenVariableExpression(VariableExpression *varExpr, std::ostream& stream) {
+void ReadableCBackend::CodeGenVariableExpression(VariableExpression *varExpr, std::ostream& stream) {
   CodeGenVariableAccess(&varExpr->variableAccess, stream);
 }
 
-void CodeGenConstantExpression(ConstantExpression *ce, std::ostream& stream) {
+void ReadableCBackend::CodeGenConstantExpression(ConstantExpression *ce, std::ostream& stream) {
   stream << ce->constant->identifier->name.string;
 }
 
-void CodeGenCallExpression(CallExpression *callExpr, std::ostream& stream) {
+void ReadableCBackend::CodeGenCallExpression(CallExpression *callExpr, std::ostream& stream) {
   Identifier *procIdent = callExpr->procedure->identifier;
   stream << procIdent->name.string;
   CodeGenParameterInvokation(&callExpr->params, stream);
 }
 
-void CodeGenBinaryOperation(BinaryOperation *binOp, std::ostream& stream) {
+void ReadableCBackend::CodeGenBinaryOperation(BinaryOperation *binOp, std::ostream& stream) {
   stream << "(";
   CodeGenExpression(binOp->lhs, stream);
   //TODO this could differ from lang in future make sure c is seprate
@@ -297,7 +318,7 @@ void CodeGenBinaryOperation(BinaryOperation *binOp, std::ostream& stream) {
   stream << ")";
 }
 
-void CodeGenUnaryOperation(UnaryOperation *unaryOp, std::ostream& stream) {
+void ReadableCBackend::CodeGenUnaryOperation(UnaryOperation *unaryOp, std::ostream& stream) {
   if (unaryOp->unaryToken != TokenType_ArrayOpen) {
     char c = 0;
     switch (unaryOp->unaryToken) {
@@ -329,14 +350,14 @@ void CodeGenUnaryOperation(UnaryOperation *unaryOp, std::ostream& stream) {
   }
 }
 
-void CodeGenCastExpression(CastExpression *castExpr, std::ostream& stream) {
+void ReadableCBackend::CodeGenCastExpression(CastExpression *castExpr, std::ostream& stream) {
   stream << "(";
   CodeGenTypeNameAndPointers(&castExpr->typeInfo, stream);
   stream << ")";
   CodeGenExpression(castExpr->expression, stream);
 }
 
-void CodeGenSizeOfExpression(SizeOfExpression *expression, std::ostream& stream) {
+void ReadableCBackend::CodeGenSizeOfExpression(SizeOfExpression *expression, std::ostream& stream) {
   stream << "sizeof(";
   CodeGenTypeNameAndPointers(&expression->sizeOfTypeInfo, stream);
   stream << ")";

@@ -10,6 +10,8 @@ enum TokenType {
 
   TokenType_ParenOpen,
   TokenType_ParenClose,
+  TokenType_BraceOpen,
+  TokenType_BraceClose,
   TokenType_BlockOpen,
   TokenType_BlockClose,
   TokenType_ArrayOpen,
@@ -71,6 +73,8 @@ const char *TokenName[] = {
 
   "TokenType_ParenOpen",
   "TokenType_ParenClose",
+  "TokenType_BraceOpen",
+  "TokenType_BraceClose",
   "TokenType_BlockOpen",
   "TokenType_BlockClose",
   "TokenType_ArrayOpen",
@@ -135,6 +139,8 @@ const char *TokenString[] = {
   ")",
   "{",
   "}",
+  "{",
+  "}",
   "[",
   "]",
 
@@ -195,6 +201,8 @@ int TokenPrecedence[] = {
 
   -1, //TokenType_ParenOpen
   -1, //TokenType_ParenClose
+  -1, //TokenType_BraceOpen
+  -1, //TokenType_BraceClose
   -1, //TokenType_BlockOpen
   -1, //TokenType_BlockClose
   -1, //TokenType_ArrayOpen

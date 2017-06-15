@@ -217,6 +217,43 @@ CastExpression *ParseCastExpression(Parser *p) {
   return castExpr;
 }
 
+//When this procedure is called, the TypeIdentifier ' 'Type' { ' has been consumed
+//and the parser is currently on the open brace.
+static InitalizerExpression *ParseInitializerExpression(Parser *p, Token identToken) {
+  assert(p->token.type == TokenType_BraceOpen);
+
+  Identifier *ident = FindIdentifier(p->currentBlock, p->token);
+  if (ident == nullptr) {
+    ReportError(p, p->token.location, "Could not find identifier %.*s", p->token.length, p->token.text);
+  } else if (ident->declaration->statementType != StatementType_TypeDeclaration) {
+    ReportError(p, identToken.location, "This is not a type");
+  } else if (IsSimpleType((TypeDeclaration *)ident->declaration, p->compiler)) {
+    ReportError(p, identToken.location, "Type is not simple");
+  }
+
+  TypeDeclaration *type = (TypeDeclaration *)ident->declaration;
+
+  while (p->token.type != TokenType_BraceClose && p->token.type != TokenType_EndOfBuffer) {
+    if (p->token.type != TokenType_Identifier) {
+      ReportError(p, p->token.location, "Expected identifier");
+    } else {
+      Identifier *identifier = FindIdentifier(type, p->token);
+      if (identifier == nullptr) {
+        //TODO search for the identifier and see if we can find it in the scope
+        //and report an error about what we found
+        ReportError(p, p->token.location, "Type does not have identifier");
+      }
+
+      NextToken(p); //Eat TokenType_Identifier
+
+
+    }
+  }
+
+  if (p->token.type == TokenType_EndOfBuffer) return nullptr;
+  NextToken(p); //Eat BraceClose
+  return nullptr;
+}
 
 Expression *ParsePrimaryExpression(Parser *p) {
 
@@ -258,9 +295,9 @@ Expression *ParsePrimaryExpression(Parser *p) {
         if (ident->declaration->statementType == StatementType_ProcedureDeclaration) {
           ProcedureDeclaration *procDecl = (ProcedureDeclaration *)ident->declaration;
           CallExpression *callExpr = CreateExpression(CallExpression, p->token.location, p);
-          callExpr->params.parameterList = &procDecl->params;
+          callExpr->params.parameterList = &procDecl->inputParameters;
           callExpr->procedure = procDecl;
-          callExpr->typeInfo = procDecl->returnTypeInfo;
+          //NOTE TypeInfo for the call is not set here!  We resolve it in validation
           if (ParseParameterInvokation(p, &callExpr->params) == false) {
             return nullptr;
           }
@@ -279,6 +316,18 @@ Expression *ParsePrimaryExpression(Parser *p) {
           ReportError(p, "Attempting to cast to or call from variable");
           return nullptr;
         }
+      }
+
+      //This is an type initalizer expression
+      else if (p->token.type == TokenType_BraceOpen) {
+        //TODO We pass the identToken to the initalizer list which handles identifier resolution and
+        //checking if its a valid type.  TODO currently we are attempting to resolve the identifier once
+        //we know that the expression is an identifier expression.  It is better to do it in the later stage
+        //like we are doing here so that we can report a much better error about what is happening.  So right now
+        //there is a duplication of work happening
+        InitalizerExpression *expression = ParseInitializerExpression(p, identToken);
+        //The close brace of the initalizer list has been consumed in the ParseInitializerList procedure
+        return expression;
       }
       
       else {
@@ -379,6 +428,12 @@ Expression *ParsePrimaryExpression(Parser *p) {
       NextToken(p); //Eat TokenType_ParenClose
       return result;
     } break;
+
+    case TokenType_BlockOpen: {
+      NextToken(p); //Eat TokenType_BlockOpen
+      return ParsePrimaryExpression(p);
+    } break;
+
 
     default: {
       ReportError(p, p->token.location, "Unexpected token");
@@ -576,15 +631,14 @@ Statement *ParseProcedureDeclaration(Parser *p, Identifier *ident) {
   procDecl->parent = p->currentBlock;
   p->currentBlock = procDecl;
 
-  if (ParseParameterDeclaration(p, &procDecl->params) == false) {
+  assert(p->token.type == TokenType_ParenOpen);
+  if (ParseParameterDeclaration(p, &procDecl->inputParameters) == false) {
     return nullptr;
   }
 
-  if (p->token.type == TokenType_BitwiseRightShift) {
-    NextToken(p); //Eat TokenType_BitwiseRightShift
-    if (ParseTypeInfo(p, &procDecl->returnTypeInfo) == false) {
-      ReportError(p, p->token.location, "Could not resolve return type of procedure '%.*s'",
-        (int)procDecl->identifier->name.length, procDecl->identifier->name.string);
+
+  if (p->token.type == TokenType_ParenOpen) {
+    if (ParseParameterDeclaration(p, &procDecl->outputParameters) == false) {
       return nullptr;
     }
   }
@@ -726,7 +780,7 @@ Statement *ParseIdentiferStatement(Parser *p) {
       
       CallStatement *callStatement = CreateStatement(CallStatement, identToken.location, p);
       callStatement->procedure = procDecl;
-      callStatement->params.parameterList = &procDecl->params;
+      callStatement->params.parameterList = &procDecl->inputParameters;
       if (ParseParameterInvokation(p, &callStatement->params) == false) {
         return nullptr;
       }
@@ -857,7 +911,6 @@ Statement *ParseStatement(Parser *p) {
     case TokenType_KeywordReturn: {
       ReturnStatement *returnStatement = CreateStatement(ReturnStatement, p->token.location, p);
       NextToken(p);
-      returnStatement->returnValue = ParseExpression(p);
       return returnStatement;
     } break;
 
