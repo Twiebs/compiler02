@@ -36,6 +36,8 @@ bool ParseVariableAccess(Parser *p, VariableAccess *memberAccess, TypeInfo *outT
 
 
 Statement *ParseStatement(Parser *p);
+IfStatement *ParseIfStatement(Parser *p);
+
 //void ParseBlock(Block *block);
 bool ParseTypeInfo(Parser *p, TypeInfo *typeInfo);
 

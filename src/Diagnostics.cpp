@@ -355,6 +355,7 @@ CodePrinter& CodePrinter::operator<<(CastExpression *cast) {
 }
 
 CodePrinter& CodePrinter::operator<<(CallExpression *callExpr) {
+  if (callExpr->procedure == nullptr) return *this;
   Identifier *procIdent = callExpr->procedure->identifier;
   *stream << procIdent->name.string;
   *this << &callExpr->params;

@@ -36,6 +36,13 @@ static inline bool IsBase2Digit(char c) {
   return result;
 }
 
+static inline bool IsWhitespace(char *s) {
+  if (IsNewline(s)) return true;
+  if (s[0] == ' ') return true;
+  if (s[0] == '\t') return true;
+  return false;
+}
+
 void InitalizeLexer(Lexer *lex, uint32_t fileID, char *buffer) {
   assert(buffer != nullptr);
   lex->current = buffer;
@@ -285,18 +292,18 @@ static bool LexIndentationAsBlocks(Lexer *lex, Token *token) {
 Token GetToken(Lexer *lex) {
   Token token = {};
   token.location.fileID = lex->fileID;
+
+#if 0
   if (LexIndentationAsBlocks(lex, &token)) {
     return token;
   }
+#endif
 
-
-
-  if (*lex->current == '\t') {
-    assert(false);
+  while (IsWhitespace(lex->current)) {
+    if (IsNewline(lex->current)) EatNewline(lex);
+    else EatCurrent(lex);
   }
 
-  if (*lex->current == ' ') assert(false);
-  while(*lex->current == ' ') EatCurrent(lex);
   token.type = TokenType_Invalid;
   token.text = lex->current;
   token.location.lineNumber = lex->lineNumber;

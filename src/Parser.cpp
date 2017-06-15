@@ -59,7 +59,7 @@ TypeDeclaration *CreateBuiltinType(Parser *p, SourceLocation location, const cha
 //When this procedure is called the parser must have already
 //consumed the block open token
 Block *ParseCurrentBlock(Parser *p) {
-  while (p->token.type != TokenType_BlockClose && p->token.type != TokenType_EndOfBuffer) {
+  while (p->token.type != TokenType_BraceClose && p->token.type != TokenType_EndOfBuffer) {
     Statement *statement = ParseStatement(p);
     if (statement == nullptr) return nullptr;
     if (p->currentBlock->firstStatement == nullptr) {
@@ -75,8 +75,8 @@ Block *ParseCurrentBlock(Parser *p) {
     p->currentBlock->statementCount++;
   }
 
-  if (p->token.type == TokenType_BlockClose)
-    NextToken(p); //Eat TokenType_BlockClose
+  if (p->token.type == TokenType_BraceClose)
+    NextToken(p); //Eat TokenType_BraceClose
   return p->currentBlock;
 }
 
@@ -255,6 +255,34 @@ static InitalizerExpression *ParseInitializerExpression(Parser *p, Token identTo
   return nullptr;
 }
 
+static CallExpression *ParseCallExpression(Parser *p, Token identToken) {
+  assert(p->token.type == TokenType_ParenOpen);
+  CallExpression *callExpr = CreateExpression(CallExpression, identToken.location, p);
+  Identifier *ident = FindIdentifier(p->currentBlock, identToken);
+  if (ident == nullptr) {
+    //TODO defer checking if the ident is unresolved untill validation
+    ReportError(p, identToken.location, "Could not find identifier %.*s when parsing call expression\n",
+      identToken.length, identToken.text);
+  } else {
+    if (ident->declaration->statementType == StatementType_ProcedureDeclaration) {
+      ProcedureDeclaration *procDecl = (ProcedureDeclaration *)ident->declaration;
+      callExpr->params.parameterList = &procDecl->inputParameters;
+      callExpr->procedure = procDecl;
+    } else if (ident->declaration->statementType == StatementType_TypeDeclaration) {
+      ReportError(p, "cant call type");
+    } else {
+      ReportError(p, "Attempting to cast to or call from variable");
+    }
+  }
+  
+  //NOTE TypeInfo for the call is not set here!  We resolve it in validation
+  if (ParseParameterInvokation(p, &callExpr->params) == false) {
+    return nullptr;
+  }
+
+  return callExpr;
+}
+
 Expression *ParsePrimaryExpression(Parser *p) {
 
   switch (p->token.type) {
@@ -280,42 +308,11 @@ Expression *ParsePrimaryExpression(Parser *p) {
 
     case TokenType_Identifier: {
       Token identToken = p->token;
-      Identifier *ident = FindIdentifier(p->currentBlock, p->token);
-      if (ident == nullptr) {
-        ReportError(p, p->token.location, "Could not find identifier %.*s",
-          p->token.length, p->token.text);
-        return nullptr;
-      }
-
       NextToken(p); //Eat identifier
-
-      //This is either a call or cast expression
+      
+      //This is a call expression
       if (p->token.type == TokenType_ParenOpen) {
-        //This is a call expression
-        if (ident->declaration->statementType == StatementType_ProcedureDeclaration) {
-          ProcedureDeclaration *procDecl = (ProcedureDeclaration *)ident->declaration;
-          CallExpression *callExpr = CreateExpression(CallExpression, p->token.location, p);
-          callExpr->params.parameterList = &procDecl->inputParameters;
-          callExpr->procedure = procDecl;
-          //NOTE TypeInfo for the call is not set here!  We resolve it in validation
-          if (ParseParameterInvokation(p, &callExpr->params) == false) {
-            return nullptr;
-          }
-
-          return callExpr;
-        }
-
-        //This is a cast expression
-        else if (ident->declaration->statementType == StatementType_TypeDeclaration) {
-          ReportError(p, "cant call type");
-          return nullptr;
-        }
-
-        //Must be a variable identifier which is invalid
-        else {
-          ReportError(p, "Attempting to cast to or call from variable");
-          return nullptr;
-        }
+        return ParseCallExpression(p, identToken);
       }
 
       //This is an type initalizer expression
@@ -330,7 +327,14 @@ Expression *ParsePrimaryExpression(Parser *p) {
         return expression;
       }
       
+      //This must be a constant or variable expression
       else {
+        Identifier *ident = FindIdentifier(p->currentBlock, identToken);
+        if (ident == nullptr) {
+          ReportError(p, p->token.location, "Could not find identifier %.*s when parsing variable or constant expression",
+            p->token.length, p->token.text);
+        }
+
         assert(ident->declaration != nullptr);
         if (ident->declaration->statementType == StatementType_ConstantDeclaration) {
           ConstantExpression *ce = CreateExpression(ConstantExpression, identToken.location, p);
@@ -429,12 +433,6 @@ Expression *ParsePrimaryExpression(Parser *p) {
       return result;
     } break;
 
-    case TokenType_BlockOpen: {
-      NextToken(p); //Eat TokenType_BlockOpen
-      return ParsePrimaryExpression(p);
-    } break;
-
-
     default: {
       ReportError(p, p->token.location, "Unexpected token");
       return nullptr;
@@ -475,11 +473,13 @@ Expression *ParseExpression(Parser *p) {
   return result;
 }
 
+//Declaration of structure types
+//TODO torin get rid of identifier here
 TypeDeclaration *ParseTypeDeclaration(Parser *p, Identifier *ident) {
   assert(p->token.type == TokenType_KeywordType);
-  NextToken(p);
-  if (p->token.type != TokenType_BlockOpen) {
-    ReportError(p, "Expected new block after type declaration");
+  NextToken(p); //Eat TokenType_KeywordType
+  if (p->token.type != TokenType_BraceOpen) {
+    ReportErrorC(p->compiler, p->token.location, "Expected open brace after declaring Type " << ident << "\n");
     return nullptr;
   }
   
@@ -494,7 +494,7 @@ TypeDeclaration *ParseTypeDeclaration(Parser *p, Identifier *ident) {
   NextToken(p); //Eat the block open
 
   Statement *currentStatement = nullptr;
-  while (p->token.type != TokenType_BlockClose) {
+  while (p->token.type != TokenType_BraceClose) {
     Statement *statement = ParseStatement(p);
     if (statement == nullptr) return nullptr;
     if (statement->statementType != StatementType_VariableDeclaration) {
@@ -513,7 +513,7 @@ TypeDeclaration *ParseTypeDeclaration(Parser *p, Identifier *ident) {
     typeDecl->statementCount += 1;
   }
 
-  assert(p->token.type == TokenType_BlockClose);
+  assert(p->token.type == TokenType_BraceClose);
   p->currentBlock = typeDecl->parent;
   NextToken(p);
   return typeDecl;
@@ -623,20 +623,18 @@ bool ParseParameterDeclaration(Parser *p, ParameterDeclaration *params) {
 
 Statement *ParseProcedureDeclaration(Parser *p, Identifier *ident) {
   assert(p->token.type == TokenType_ParenOpen);
-
-
   ProcedureDeclaration *procDecl = CreateStatement(ProcedureDeclaration, ident->location, p);
   procDecl->identifier = ident;
   ident->declaration = procDecl;
   procDecl->parent = p->currentBlock;
   p->currentBlock = procDecl;
 
-  assert(p->token.type == TokenType_ParenOpen);
+  //Parse required input parameters
   if (ParseParameterDeclaration(p, &procDecl->inputParameters) == false) {
     return nullptr;
   }
 
-
+  //Parse output parameters if any are present
   if (p->token.type == TokenType_ParenOpen) {
     if (ParseParameterDeclaration(p, &procDecl->outputParameters) == false) {
       return nullptr;
@@ -646,17 +644,17 @@ Statement *ParseProcedureDeclaration(Parser *p, Identifier *ident) {
   if (p->token.type == TokenType_KeywordForeign) {
     procDecl->isForeign = true;
     NextToken(p);
-    if (p->token.type == TokenType_BlockOpen) {
+    if (p->token.type == TokenType_BraceOpen) {
       ReportError(p, "Foregin functions cannot have a procedure body!");
     }
   }
 
-  if (p->token.type != TokenType_BlockOpen && procDecl->isForeign == false) {
+  if (p->token.type != TokenType_BraceOpen && procDecl->isForeign == false) {
     ReportError(p, p->token.location, "Procedure '%.*s' must have a body",
       (int)ident->name.length, ident->name.string);
   } else if (procDecl->isForeign == false) {
-    NextToken(p); //Eat blockopen
-    if(ParseCurrentBlock(p) == nullptr) return nullptr;    
+    NextToken(p); //Eat TokenType_BraceOpen
+    if (ParseCurrentBlock(p) == nullptr) return nullptr;    
   }
 
   p->currentBlock = procDecl->parent;
@@ -721,12 +719,38 @@ ConstantDeclaration *ParseConstantDeclaration(Parser *p, Identifier *ident) {
   return result;
 }
 
+//The ident token has been parsed and we just gt a ParenOpen indicating
+//that this is a call statement
+CallStatement *ParseCallStatement(Parser *p, Token identToken) {
+  assert(p->token.type == TokenType_ParenOpen);
+  CallStatement *callStatement = CreateStatement(CallStatement, identToken.location, p);
+  Identifier *ident = FindIdentifier(p->currentBlock, identToken);
+  if (ident == nullptr) {
+    ReportError(p, identToken.location, "Identifier '%.*s' not found when trying to call procedure", (int)identToken.length, identToken.text);
+  } else {
+    ProcedureDeclaration *procDecl = (ProcedureDeclaration *)ident->declaration;
+    if (procDecl->statementType != StatementType_ProcedureDeclaration) {
+      ReportError(p, identToken.location, "Identifier does not name a procedure");
+    } else {
+      callStatement->procedure = procDecl;
+      callStatement->params.parameterList = &procDecl->inputParameters;
+    }
+  }
+
+  if (ParseParameterInvokation(p, &callStatement->params) == false) {
+    return nullptr;
+  }
+  
+  return callStatement;
+}
+
 Statement *ParseIdentiferStatement(Parser *p) {
   assert(p->token.type == TokenType_Identifier);
   Token identToken = p->token;
-  NextToken(p);
-  switch (p->token.type) {
+  NextToken(p); //Eat TokenType_Identifier
 
+
+  switch (p->token.type) {
     case TokenType_SymbolColon: {
       NextToken(p); //Eat single colon
       Identifier *ident = FindIdentifier(p->currentBlock, identToken);
@@ -762,30 +786,8 @@ Statement *ParseIdentiferStatement(Parser *p) {
     } break;
 
 
-
-
     case TokenType_ParenOpen: {
-      Identifier *ident = FindIdentifier(p->currentBlock, identToken);
-      if (ident == nullptr) {
-        ReportError(p, identToken.location, "Identifier '%.*s' not found", (int)identToken.length, identToken.text);
-        return nullptr;
-      }
-
-      ProcedureDeclaration *procDecl = (ProcedureDeclaration *)ident->declaration;
-      if (procDecl->statementType != StatementType_ProcedureDeclaration) {
-        ReportError(p, identToken.location, "Identifier does not name a procedure");
-        return nullptr;
-      }
-
-      
-      CallStatement *callStatement = CreateStatement(CallStatement, identToken.location, p);
-      callStatement->procedure = procDecl;
-      callStatement->params.parameterList = &procDecl->inputParameters;
-      if (ParseParameterInvokation(p, &callStatement->params) == false) {
-        return nullptr;
-      }
-      
-      return callStatement;
+      return ParseCallStatement(p, identToken);
     } break;
 
     case TokenType_Identifier: {
@@ -810,38 +812,67 @@ Statement *ParseIdentiferStatement(Parser *p) {
   return nullptr;
 }
 
+
+//TODO better brace message
 WhileStatement *ParseWhileStatement(Parser *p) {
   assert(p->token.type == TokenType_KeywordWhile);
   NextToken(p); //Eat TokenType_KeywordWhile
   WhileStatement *whileStatement = CreateStatement(WhileStatement, p->token.location, p);
   whileStatement->parent = p->currentBlock;
-  whileStatement->condition = ParseExpression(p);
-  if (whileStatement->condition == nullptr) return nullptr;
-  if (p->token.type != TokenType_BlockOpen) {
-    ReportError(p, p->token.location, "Expected block after while");
+  if (p->token.type != TokenType_ParenOpen) {
+    ReportErrorC(p->compiler, p->token.location, "Expected paren open '(' after while keyword\n");
     return nullptr;
   }
 
-  NextToken(p); //Eat TokenType_BlockOpen
+  //Parse the while condition
+  NextToken(p); //Eat TokenType_ParenOpen
+  whileStatement->condition = ParseExpression(p);
+  if (whileStatement->condition == nullptr) return nullptr;
+  if (p->token.type != TokenType_ParenClose) {
+    ReportErrorC(p->compiler, p->token.location, "Expected paren close after while condition\n");
+    return nullptr;
+  }
+
+  //The while condition has been sucuessfuly parsed and now we will handle the block
+  NextToken(p); //Eat TokenType_ParenClose
+  if (p->token.type != TokenType_BraceOpen) {
+    ReportError(p, p->token.location, "Expected block after while");
+    return nullptr;
+  }
+  NextToken(p); //Eat TokenType_BraceOpen
   p->currentBlock = whileStatement;
   if (ParseCurrentBlock(p) == nullptr) return nullptr;
   p->currentBlock = whileStatement->parent;
   return whileStatement;
 }
 
+//TODO clean up if implementation, possibly combine into a "conditional branch" struct
 IfStatement *ParseIfStatement(Parser *p) {
   assert(p->token.type == TokenType_KeywordIf);
   NextToken(p); //Eat TokenType_KeywordIf
   IfStatement *ifStatement = CreateStatement(IfStatement, p->token.location, p);
   ifStatement->parent = p->currentBlock;
+  if (p->token.type != TokenType_ParenOpen) {
+    ReportErrorC(p->compiler, p->token.location, "expected open paren after if keyword\n");
+    return nullptr;
+  }
+
+  NextToken(p); //Eat TokenType_ParenOpen
   ifStatement->condition = ParseExpression(p);
   if (ifStatement->condition == nullptr) return nullptr;
-  if (p->token.type != TokenType_BlockOpen) {
+  if (p->token.type != TokenType_ParenClose) {
+    ReportErrorC(p->compiler, p->token.location, "Missing close paren after if statement\n");
+    return nullptr;
+  }
+
+  //The condition has been sucuessfuly parsed and now the block will be parsed
+  NextToken(p); //Eat TokenType_ParenClose
+  if (p->token.type != TokenType_BraceOpen) {
     ReportError(p, p->token.location, "Expected block after if statement");
     return nullptr;
   }
 
-  NextToken(p); //Eat TokenType_BlockOpen
+  NextToken(p); //Eat TokenType_BraceOpen
   p->currentBlock = ifStatement;
   if (ParseCurrentBlock(p) == nullptr) return nullptr;
   p->currentBlock = ifStatement->parent;
@@ -864,12 +895,12 @@ IfStatement *ParseIfStatement(Parser *p) {
       if (elseStatement->condition == nullptr) return nullptr;
     }
 
-    if (p->token.type != TokenType_BlockOpen) {
+    if (p->token.type != TokenType_BraceOpen) {
       ReportError(p, p->token.location, "Expected block after if");
       return nullptr;
     }
 
-    NextToken(p); //Eat TokenType_BlockOpen
+    NextToken(p); //Eat TokenType_BraceOpen
     p->currentBlock = elseStatement;
     if (ParseCurrentBlock(p) == nullptr) return nullptr;
     p->currentBlock = elseStatement->parent; 
@@ -904,7 +935,7 @@ Statement *ParseStatement(Parser *p) {
     } break;
 
 
-    case TokenType_BlockOpen: {
+    case TokenType_BraceOpen: {
       assert(false);
     } break;
 

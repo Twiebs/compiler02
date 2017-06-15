@@ -1,7 +1,6 @@
 # A very simple unoptimized software triangle rasterizer
 # This is just an example program for the toy language
 
-
 IMPORT "stdlib/sdl.src"
 IMPORT "stdlib/string.src"
 IMPORT "stdlib/io.src"
@@ -14,32 +13,33 @@ IMPORT "stdlib/math_vector.src"
 IMPORT "stdlib/math_matrix.src"
 
 
-RGB8 :: TYPE
+RGB8 :: TYPE {
   r: U8
   g: U8
   b: U8
+}
 
-RGBA8 :: TYPE
+RGBA8 :: TYPE {
   r: U8
   g: U8
   b: U8
   a: U8
+}
 
-
-TriangleVertex :: TYPE
+TriangleVertex :: TYPE {
   position: Vector3
   normal: Vector3
   color: RGBA8
+}
 
-
-TriangleMesh :: TYPE
+TriangleMesh :: TYPE {
   vertices: @TriangleVertex
   indices: @U32
   vertexCount: U32
   indexCount: U32
+}
 
-
-RenderContext :: TYPE
+RenderContext :: TYPE {
   bufferWidth: U32
   bufferHeight: U32
   bufferColor: @U8
@@ -48,9 +48,9 @@ RenderContext :: TYPE
   lastTime: U32
   elapsedTime: F32
   deltaTime: F32
+}
 
-
-Camera :: TYPE
+Camera :: TYPE {
   position: Vector3
   front: Vector3
   pitch: F32
@@ -58,18 +58,18 @@ Camera :: TYPE
   viewportWidth: F32
   viewportHeight: F32
   fieldOfView: F32
+}
 
-
-SceneObject :: TYPE
+SceneObject :: TYPE {
   mesh: @TriangleMesh
   position: Vector3
+}
 
-
-SceneInfo :: TYPE
+SceneInfo :: TYPE {
   objects: [128]SceneObject
   objectCount: S64
   lightDirection: Vector3
-
+}
 
 addSceneObject :: (sceneInfo: @SceneInfo, mesh: @TriangleMesh, position: Vector3) {
   IF (sceneInfo.objectCount + 1 > 128) { RETURN }
@@ -79,33 +79,33 @@ addSceneObject :: (sceneInfo: @SceneInfo, mesh: @TriangleMesh, position: Vector3
   sceneInfo.objectCount = sceneInfo.objectCount + 1
 }
 
-
-make_rgba8 :: (r: U8, g: U8, b: U8, a: U8)(result: RGBA8)
+make_rgba8 :: (r: U8, g: U8, b: U8, a: U8)(result: RGBA8) {
   result.r = r
   result.g = g
   result.b = b
   result.a = a
+}
 
-
-make_rgb8_from_rgba8 :: (a: RGBA8)(result: RGB8)
+make_rgb8_from_rgba8 :: (a: RGBA8)(result: RGB8) {
   result.r = a.r
   result.g = a.g
   result.b = a.b
+}
 
-make_vector4_from_rgba8 :: (a: RGBA8)(result: Vector4)
+make_vector4_from_rgba8 :: (a: RGBA8)(result: Vector4) {
   result.x = CAST(F32)a.r / 255.0
   result.y = CAST(F32)a.g / 255.0
   result.z = CAST(F32)a.b / 255.0
   result.w = CAST(F32)a.a / 255.0
+}
 
-
-make_triangle_vertex :: (position: Vector3, normal: Vector3, color: RGBA8)(vertex: TriangleVertex)
+make_triangle_vertex :: (position: Vector3, normal: Vector3, color: RGBA8)(vertex: TriangleVertex) {
   vertex.position = position
   vertex.normal = normal
   vertex.color = color
+}
 
-
-renderContextInitalize :: (ctx : @RenderContext, viewport_width: U32, viewport_height: U32)
+renderContextInitalize :: (ctx : @RenderContext, viewport_width: U32, viewport_height: U32) {
   ctx.bufferWidth = viewport_width
   ctx.bufferHeight = viewport_height
   ctx.lastTime = 0
@@ -126,19 +126,20 @@ renderContextInitalize :: (ctx : @RenderContext, viewport_width: U32, viewport_h
   ctx.viewportMatrix.data[13] = CAST(F32)ctx.bufferHeight / 2.0
   ctx.viewportMatrix.data[14] = 0.5
   ctx.viewportMatrix.data[14] = 1.0
+}
 
-
-renderContextTerminate :: (ctx : @RenderContext)
+renderContextTerminate :: (ctx : @RenderContext) {
   free(ctx.bufferColor) #This is where memory for the whole buffer starts
+}
 
 
-framebufferClear :: (ctx : @RenderContext)
+framebufferClear :: (ctx : @RenderContext) {
   bufferSize: U32 = CAST(U32)(ctx.bufferWidth * ctx.bufferHeight * 3)
   memset(ctx.bufferColor, 0, CAST(U64)bufferSize)
-
+}
 
 # Temporarily ignoring alignment
-allocateTriangleMesh :: (vertexCount: U32, indexCount: U32)(mesh: @TriangleMesh)
+allocateTriangleMesh :: (vertexCount: U32, indexCount: U32)(mesh: @TriangleMesh) {
   requiredMemory: U64 = 0
   requiredMemory = requiredMemory + SIZEOF(TriangleMesh)
   requiredMemory = requiredMemory + SIZEOF(TriangleVertex) * CAST(U64)vertexCount
@@ -150,9 +151,9 @@ allocateTriangleMesh :: (vertexCount: U32, indexCount: U32)(mesh: @TriangleMesh)
   mesh.indices = CAST(@U32)(CAST(U64)mesh.vertices + (SIZEOF(TriangleVertex) * CAST(U64)vertexCount))
   mesh.vertexCount = vertexCount
   mesh.indexCount = indexCount
+}
 
-
-createProceduralPlaneMesh :: ()(mesh: @TriangleMesh)
+createProceduralPlaneMesh :: ()(mesh: @TriangleMesh) {
   mesh = allocateTriangleMesh(4, 6)
   mesh.vertices[0].position = make_vector3(0.0, 0.0, 0.0)
   mesh.vertices[1].position = make_vector3(1.0, 0.0, 0.0)
@@ -164,9 +165,9 @@ createProceduralPlaneMesh :: ()(mesh: @TriangleMesh)
   mesh.vertices[3].normal = make_vector3(0.0, 1.0, 0.0)
   mesh.indices[0] = 0 mesh.indices[1] = 1 mesh.indices[2] = 2
   mesh.indices[3] = 0 mesh.indices[4] = 2 mesh.indices[5] = 3
+}
 
-
-createProceduralSquarePlaneMesh :: (cellsPerEdgeCount: S32, halfWidth: F32)(mesh: @TriangleMesh)
+createProceduralSquarePlaneMesh :: (cellsPerEdgeCount: S32, halfWidth: F32)(mesh: @TriangleMesh) {
   totalVertexCount: S32 = (cellsPerEdgeCount * cellsPerEdgeCount) * 4
   totalIndexCount: S32 = (cellsPerEdgeCount * cellsPerEdgeCount) * 6
   mesh = allocateTriangleMesh(CAST(U32)totalVertexCount, CAST(U32)totalIndexCount)
@@ -179,20 +180,23 @@ createProceduralSquarePlaneMesh :: (cellsPerEdgeCount: S32, halfWidth: F32)(mesh
   colorBlue: RGBA8 = make_rgba8(0, 0, 255, 255)
 
   i: S32 = 0
-  WHILE i < (cellsPerEdgeCount * cellsPerEdgeCount)
+  WHILE (i < (cellsPerEdgeCount * cellsPerEdgeCount)) {
     x: S32 = i % cellsPerEdgeCount
     y: S32 = i / cellsPerEdgeCount
     xpos: F32 = CAST(F32)x * cellWidth
     ypos: F32 = CAST(F32)y * cellWidth
     color: RGBA8
-    IF (y % 2) == 0
+    IF ((y % 2) == 0) {
       color = make_rgba8(175, 175, 175, 255)
-      IF (x % 2) == 0
+      IF ((x % 2) == 0) {
         color = make_rgba8(125, 125, 125, 255)
-    ELSE
+      }
+    } ELSE {
       color = make_rgba8(125, 125, 125, 255)
-      IF (x % 2) == 0
+      IF ((x % 2) == 0) {
         color = make_rgba8(175, 175, 175, 255)
+      }
+    }
 
     mesh.vertices[vertexOffset + 0].position = make_vector3(xpos, 0.0, ypos + cellWidth)
     mesh.vertices[vertexOffset + 1].position = make_vector3(xpos + cellWidth, 0.0, ypos + cellWidth)
@@ -215,10 +219,10 @@ createProceduralSquarePlaneMesh :: (cellsPerEdgeCount: S32, halfWidth: F32)(mesh
     vertexOffset = vertexOffset + 4
     indexOffset = indexOffset + 6
     i = i + 1
+  }
+}
 
-
-
-createProceduralCubeMesh :: (color: RGBA8)(mesh: @TriangleMesh)
+createProceduralCubeMesh :: (color: RGBA8)(mesh: @TriangleMesh) {
   mesh = allocateTriangleMesh(24, 36)
   #Front Face
   mesh.vertices[0] = make_triangle_vertex(make_vector3(-0.5, -0.5, 0.5), make_vector3(0.0, 0.0, 1.0), color)
@@ -269,16 +273,18 @@ createProceduralCubeMesh :: (color: RGBA8)(mesh: @TriangleMesh)
   #Bottom
   mesh.indices[30] = 20 mesh.indices[31] = 21 mesh.indices[32] = 22
   mesh.indices[33] = 20 mesh.indices[34] = 22 mesh.indices[35] = 23
+}
 
-
-topOrLeftEdgeBias :: (a: Vector2i, b: Vector2i)(bias: S32)
+topOrLeftEdgeBias :: (a: Vector2i, b: Vector2i)(bias: S32) {
   bias = -1
   edge: Vector2i = sub_vector2i_vector2i(b, a)
-  IF (b.y < a.y) && (edge.x < 0)
+  IF ((b.y < a.y) && (edge.x < 0)) {
     bias = 0
+  }
+}
 
 
-drawScreenTriangle :: (ctx: @RenderContext, a: Vector2i, b: Vector2i, c: Vector2i)
+drawScreenTriangle :: (ctx: @RenderContext, a: Vector2i, b: Vector2i, c: Vector2i) {
   a.y = CAST(S32)ctx.bufferHeight - a.y
   b.y = CAST(S32)ctx.bufferHeight - b.y
   c.y = CAST(S32)ctx.bufferHeight - c.y
@@ -293,25 +299,28 @@ drawScreenTriangle :: (ctx: @RenderContext, a: Vector2i, b: Vector2i, c: Vector2
   maxY = min_int32(CAST(S32)ctx.bufferHeight - 1, maxY)
 
   currentSubPixel: Vector2i = make_vector2i(minX, minY)
-  WHILE currentSubPixel.y < maxY
+  WHILE (currentSubPixel.y < maxY) {
     currentSubPixel.x = minX
-    WHILE currentSubPixel.x < maxX
+    WHILE (currentSubPixel.x < maxX) {
       w0: S32 = orient2D(b, c, currentSubPixel)
       w1: S32 = orient2D(c, a, currentSubPixel)
       w2: S32 = orient2D(a, b, currentSubPixel)
-      IF w0 >= 0 && w1 >= 0 && w2 >= 0
+      IF (w0 >= 0 && w1 >= 0 && w2 >= 0) {
         pixelX: S32 = currentSubPixel.x
         pixelY: S32 = currentSubPixel.y
         index: U64 = CAST(U64)((CAST(U32)pixelX + (CAST(U32)pixelY * ctx.bufferWidth)) * 3)
         ctx.bufferColor[index + 0] = 255
         ctx.bufferColor[index + 1] = 0
         ctx.bufferColor[index + 2] = 0
+      }
       currentSubPixel.x = currentSubPixel.x + 1
+    }
     currentSubPixel.y = currentSubPixel.y + 1
+  }
+}
 
 
-
-drawTriangle :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, a: TriangleVertex, b: TriangleVertex, c: TriangleVertex, sceneInfo: @SceneInfo)
+drawTriangle :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, a: TriangleVertex, b: TriangleVertex, c: TriangleVertex, sceneInfo: @SceneInfo) {
   localSpaceA: Vector4 = make_vector4_from_vector3(a.position, 1.0)
   localSpaceB: Vector4 = make_vector4_from_vector3(b.position, 1.0)
   localSpaceC: Vector4 = make_vector4_from_vector3(c.position, 1.0)
@@ -349,14 +358,14 @@ drawTriangle :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, a: TriangleVertex, b
   colorC: Vector4 = make_vector4_from_rgba8(c.color)
 
   currentSubPixel: Vector2i = make_vector2i(minX, minY)
-  WHILE currentSubPixel.y < maxY
+  WHILE (currentSubPixel.y < maxY) {
     currentSubPixel.x = minX
-    WHILE currentSubPixel.x < maxX
+    WHILE (currentSubPixel.x < maxX) {
       w0: S32 = orient2D(subPixelSpaceB, subPixelSpaceC, currentSubPixel)
       w1: S32 = orient2D(subPixelSpaceC, subPixelSpaceA, currentSubPixel)
       w2: S32 = orient2D(subPixelSpaceA, subPixelSpaceB, currentSubPixel)
 
-      IF w0 >= 0 && w1 >= 0 && w2 >= 0
+      IF (w0 >= 0 && w1 >= 0 && w2 >= 0) {
         sum: S32 = w0 + w1 + w2
         bc0: F32 = CAST(F32)w0 / CAST(F32)sum
         bc1: F32 = CAST(F32)w1 / CAST(F32)sum
@@ -370,48 +379,52 @@ drawTriangle :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, a: TriangleVertex, b
         normal = add_vector3_vector3(normal, mul_vector3_float32(b.normal, bc1))
         normal = add_vector3_vector3(normal, mul_vector3_float32(c.normal, bc2))
         intensity: F32 = max_float32(dot_vector3(normal, sceneInfo.lightDirection), 0.0)
-        IF 1 == 1
-          color = mul_vector4_float32(color, intensity)
-          pixelX: S32 = currentSubPixel.x
-          pixelY: S32 = CAST(S32)ctx.bufferHeight - currentSubPixel.y
-          index: U64 = CAST(U64)((CAST(U32)pixelX + (CAST(U32)pixelY * ctx.bufferWidth)) * 3)
-          ctx.bufferColor[index + 0] = CAST(U8)(color.x * 255.0)
-          ctx.bufferColor[index + 1] = CAST(U8)(color.y * 255.0)
-          ctx.bufferColor[index + 2] = CAST(U8)(color.z * 255.0)
-
+        color = mul_vector4_float32(color, intensity)
+        pixelX: S32 = currentSubPixel.x
+        pixelY: S32 = CAST(S32)ctx.bufferHeight - currentSubPixel.y
+        index: U64 = CAST(U64)((CAST(U32)pixelX + (CAST(U32)pixelY * ctx.bufferWidth)) * 3)
+        ctx.bufferColor[index + 0] = CAST(U8)(color.x * 255.0)
+        ctx.bufferColor[index + 1] = CAST(U8)(color.y * 255.0)
+        ctx.bufferColor[index + 2] = CAST(U8)(color.z * 255.0)
+      }
       currentSubPixel.x = currentSubPixel.x + 1
+    }
     currentSubPixel.y = currentSubPixel.y + 1
-
+  }
+}
 
 
  
-drawTriangleMesh :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, mesh: @TriangleMesh, sceneInfo: @SceneInfo)
+drawTriangleMesh :: (ctx: @RenderContext, mvpMatrix: Matrix4x4, mesh: @TriangleMesh, sceneInfo: @SceneInfo) {
   currentIndex: S64 = 0
-  WHILE currentIndex < CAST(S64)mesh.indexCount
+  WHILE (currentIndex < CAST(S64)mesh.indexCount) {
     index0: U32 = mesh.indices[currentIndex + 0]
     index1: U32 = mesh.indices[currentIndex + 1]
     index2: U32 = mesh.indices[currentIndex + 2]
     drawTriangle(ctx, mvpMatrix, mesh.vertices[index0], mesh.vertices[index1], mesh.vertices[index2], sceneInfo)
     currentIndex = currentIndex + 3
+  }
+}
 
 
-copy_framebuffer_to_sdl_texture :: (ctx: @RenderContext, texture: @SDL_Texture)
+copy_framebuffer_to_sdl_texture :: (ctx: @RenderContext, texture: @SDL_Texture) {
   pixels: @U8 = 0
   pitch: S32 = 0
   SDL_LockTexture(texture, CAST(@SDL_Rect)0, @pixels, @pitch)
   write_index: U64 = 0
   read_index: U64 = 0
-  WHILE write_index < CAST(U64)(ctx.bufferWidth * ctx.bufferHeight * 4)
+  WHILE (write_index < CAST(U64)(ctx.bufferWidth * ctx.bufferHeight * 4)) {
     pixels[write_index + 3] = 255 #A
     pixels[write_index + 2] = ctx.bufferColor[read_index + 0] #R
     pixels[write_index + 1] = ctx.bufferColor[read_index + 1] #G
     pixels[write_index + 0] = ctx.bufferColor[read_index + 2] #B
     write_index = write_index + 4
     read_index = read_index + 3
+  }
   SDL_UnlockTexture(texture)
+}
 
-
-renderScene :: (ctx: @RenderContext, camera: @Camera, sceneInfo: @SceneInfo)
+renderScene :: (ctx: @RenderContext, camera: @Camera, sceneInfo: @SceneInfo) {
   camera.pitch = clamp_float32(camera.pitch, degrees_to_radians(-89.0), degrees_to_radians(89.0))
   camera.front.x = cosf(camera.yaw) * cosf(camera.pitch)
   camera.front.y = sinf(camera.pitch)
@@ -420,18 +433,21 @@ renderScene :: (ctx: @RenderContext, camera: @Camera, sceneInfo: @SceneInfo)
   viewMatrix: Matrix4x4 = make_matrix4x4_look_at_direction_right_hand(camera.position, camera.front)
   projectionMatrix: Matrix4x4 = make_matrix4x4_perspective_right_hand(camera.fieldOfView, camera.viewportWidth, camera.viewportHeight, 0.1, 100.0)
   objectIndex: S64 = 0
-  WHILE objectIndex < sceneInfo.objectCount
+  WHILE (objectIndex < sceneInfo.objectCount) {
     sceneObject: @SceneObject = @sceneInfo.objects[objectIndex]
     modelMatrix: Matrix4x4 = make_matrix4x4_translate_vector3(sceneObject.position)
     modelViewMatrix: Matrix4x4 = mul_matrix4x4_matrix4x4(viewMatrix, modelMatrix)
     mvpMatrix: Matrix4x4 = mul_matrix4x4_matrix4x4(projectionMatrix, modelViewMatrix)
     drawTriangleMesh(ctx, mvpMatrix, sceneObject.mesh, sceneInfo)  
     objectIndex = objectIndex + 1
+  }
+}
 
-
-main :: ()(errorCode: S32)
+main :: ()(errorCode: S32) {
   BUFFER_WIDTH :: 1280
   BUFFER_HEIGHT :: 720
+
+  test_matrix_math()
 
   ctx: RenderContext
   renderContextInitalize(@ctx, BUFFER_WIDTH, BUFFER_HEIGHT)
@@ -474,24 +490,24 @@ main :: ()(errorCode: S32)
   keystate: @U8 = SDL_GetKeyboardState(@keycount)
 
   isRunning: S32 = 1
-  WHILE isRunning == 1
-    IF ctx.lastTime == 0
+  WHILE (isRunning == 1) {
+    IF (ctx.lastTime == 0) {
       ctx.lastTime = SDL_GetTicks()
       ctx.elapsedTime = 1.0 / 60.0
       ctx.deltaTime = 1.0 / 60.0
-    ELSE
+    } ELSE {
       currentTicks: U32 = SDL_GetTicks()
       deltaTicks: U32 = currentTicks - ctx.lastTime
       ctx.lastTime = currentTicks
       ctx.deltaTime = (CAST(F32)deltaTicks) / 1000.0
       ctx.elapsedTime = ctx.elapsedTime + ctx.deltaTime
+    }
 
     event: SDL_Event
     event.type = 0
-    WHILE SDL_PollEvent(@event) == 1
-      IF event.type == SDL_QUIT
-        errorCode = -1
-        RETURN
+    WHILE (SDL_PollEvent(@event) == 1) {
+      IF (event.type == SDL_QUIT) { errorCode = -1 RETURN }
+    }
 
     currentMouseX : S32 = 0
     currentMouseY : S32 = 0
@@ -502,7 +518,7 @@ main :: ()(errorCode: S32)
     lastGlobalMouseY = currentMouseY
 
     # Camera FPS Controls
-    IF (buttonMask & SDL_BUTTON_RMASK) > 0
+    IF ((buttonMask & SDL_BUTTON_RMASK) > 0) {
       camera.yaw = camera.yaw + (CAST(F32)deltaMouseX * ctx.deltaTime)
       camera.pitch = camera.pitch - (CAST(F32)deltaMouseY * ctx.deltaTime)
       camera.pitch = clamp_float32(camera.pitch, degrees_to_radians(-89.0), degrees_to_radians(89.0))
@@ -510,29 +526,37 @@ main :: ()(errorCode: S32)
       cameraUp: Vector3 = make_vector3(0.0, 1.0, 0.0)
       cameraRight: Vector3 = normalize_vector3(cross_vector3(camera.front, cameraUp))
       deltaPosition: Vector3 = make_vector3(0.0, 0.0, 0.0)
-      IF keystate[SDL_SCANCODE_W] > 0
+      IF (keystate[SDL_SCANCODE_W] > 0) {
         deltaPosition = add_vector3_vector3(deltaPosition, camera.front)
-      IF keystate[SDL_SCANCODE_S] > 0
+      }
+      IF (keystate[SDL_SCANCODE_S] > 0) {
         deltaPosition = sub_vector3_vector3(deltaPosition, camera.front)
-      IF keystate[SDL_SCANCODE_A] > 0
+      }
+      IF (keystate[SDL_SCANCODE_A] > 0) {
         deltaPosition = sub_vector3_vector3(deltaPosition, cameraRight)
-      IF keystate[SDL_SCANCODE_D] > 0
+      }
+      IF (keystate[SDL_SCANCODE_D] > 0) {
         deltaPosition = add_vector3_vector3(deltaPosition, cameraRight)
-      IF keystate[SDL_SCANCODE_SPACE] > 0
+      }
+      IF (keystate[SDL_SCANCODE_SPACE] > 0) {
         deltaPosition = add_vector3_vector3(deltaPosition, cameraUp)
-      IF keystate[SDL_SCANCODE_LCTRL] > 0
+      }
+      IF (keystate[SDL_SCANCODE_LCTRL] > 0) {
         deltaPosition = sub_vector3_vector3(deltaPosition, cameraUp)
+      }
 
       deltaPosition = mul_vector3_float32(deltaPosition, 3.0)
       deltaPosition = mul_vector3_float32(deltaPosition, ctx.deltaTime)
       camera.position = add_vector3_vector3(camera.position, deltaPosition)
-
+    }
 
     framebufferClear(@ctx)
     renderScene(@ctx, @camera, @sceneInfo)
     copy_framebuffer_to_sdl_texture(@ctx, texture)
     SDL_RenderCopy(sdl_renderer, texture, CAST(@SDL_Rect)0, CAST(@SDL_Rect)0)
     SDL_RenderPresent(sdl_renderer)
+  }
     
   renderContextTerminate(@ctx)
   errorCode = 0
+}

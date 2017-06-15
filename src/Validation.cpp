@@ -49,6 +49,8 @@ bool ValidateExpression(Compiler *c, Expression *expr) {
 }
 
 bool ValidateCallExpression(Compiler *c, CallExpression *call) {
+  if (call->procedure == nullptr) return false;
+
   if (call->procedure->outputParameters.parameterCount == 0) {
     ReportErrorC(c, call->location, "Call to procedure " << call->procedure->identifier <<
     " is being used as an expression but the return type is Void\n");
@@ -137,13 +139,17 @@ void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params
     VariableDeclaration *currentVar = paramDecl->firstParameter;
     Expression *current = params->firstParameterExpression;
     while (current != nullptr) {
-      assert(currentVar != nullptr);
-      if (AttemptTypeCoercionIfRequired(compiler, &currentVar->typeInfo, current) == false) {
-        ReportErrorC(compiler, current->location, "In parameter invokation '" <<
-          params << "': \n   Expression '" << current << "' of type '" << &current->typeInfo <<
-          "' does not match parameter '" << currentVar->identifier->name.string << "' of type ' " <<
-          &currentVar->typeInfo << " in parameter declaration " << paramDecl << "\n");
-      } 
+      //This currently(2017-06-15) happens when a call expression did not have its identifier resolved
+      if (current->typeInfo.type != nullptr) {
+        assert(currentVar != nullptr);
+        if (AttemptTypeCoercionIfRequired(compiler, &currentVar->typeInfo, current) == false) {
+          ReportErrorC(compiler, current->location, "Parameter Type Mismatch:\n" <<
+            "    In parameter invokation " << params << " expression " << current << " of type " << &current->typeInfo <<
+            " does not match \n    parameter " << currentVar->identifier->name.string << " of type " <<
+            &currentVar->typeInfo << " in parameter declaration " << paramDecl << "\n\n");
+        } 
+      }
+
       current = current->next;
       currentVar = (VariableDeclaration *)currentVar->next;
     }
@@ -151,6 +157,7 @@ void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params
 }
 
 bool ValidateCallStatement(Compiler *compiler, CallStatement *call) {
+  if (call->procedure == nullptr) return false;
   //TODO better error
   ValidateParameterInvokation(compiler, &call->params, call->location);
   return true;
@@ -266,7 +273,6 @@ bool ValidateVariableAssignment(Compiler *compiler, VariableAssignment *varAssig
 }
 
 bool AttemptTypeCoercionIfRequired(Compiler *compiler, TypeInfo *requestedType, Expression *expr) {
-  assert(expr->typeInfo.type != nullptr);
   if (Equals(requestedType, &expr->typeInfo)) return true;
 
   if (expr->expressionType == ExpressionType_UnaryOperation) {
