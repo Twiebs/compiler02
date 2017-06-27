@@ -81,10 +81,24 @@ struct Statement {
 
 struct Identifier {
   StringReference name;
-  SourceLocation location;
+  SourceLocation location; //TODO is this nessescary?
   Statement *declaration;
   Identifier *next;
 };
+
+#if 0
+class IdentifierList {
+public:
+  void append(Identifier *identifier);
+  Identifier *find(const char *string, size_t length);
+
+private:
+  IdentifierList *parentList;
+  Identifier *firstIdentifier;
+  Identifier *lastIdentifier;
+  int identifierCount;
+};
+#endif
 
 struct Block : Statement {
   Identifier *firstIdentifier;
@@ -99,7 +113,6 @@ struct TypeDeclaration : Block {
   Identifier *identifier;
   llvm::Type *llvmType;
 };
-
 
 struct TypeInfo {
   TypeDeclaration *type;
@@ -252,6 +265,7 @@ struct CastExpression : Expression {
 };
 
 struct CallExpression : Expression {
+  Identifier *procedureIdentifier;
   ProcedureDeclaration *procedure;
   ParameterInvokation params;
 };

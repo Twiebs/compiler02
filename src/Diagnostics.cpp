@@ -331,6 +331,21 @@ CodePrinter& CodePrinter::operator<<(Expression *expression) {
   return *this;
 }
 
+CodePrinter& CodePrinter::operator<<(VariableDeclaration *varDecl) {
+  Identifier *varIdent = varDecl->identifier;
+  setColor(variableColor);
+  *stream << varIdent->name.string;
+  setColor(defaultColor);
+  *stream << ": ";
+  *this << &varDecl->typeInfo;
+  if (varDecl->initalExpression != nullptr) {
+    *stream << " = ";
+    *this << varDecl->initalExpression;
+  }
+  return *this;
+}
+
+
 CodePrinter& CodePrinter::operator<<(VariableAssignment *varAssignment) {
   *stream << &varAssignment->variableAccess;
   *stream << " = ";
@@ -402,7 +417,14 @@ CodePrinter& CodePrinter::operator<<(ParameterInvokation *params) {
 }
 
 CodePrinter& CodePrinter::operator<<(ParameterDeclaration *params) {
-  PrintParameterDeclaration(params);
+  *stream << "(";
+  VariableDeclaration *current = params->firstParameter;
+  while (current != nullptr) {
+    *this << current;
+    current = (VariableDeclaration *)current->next;
+    if (current != nullptr) *stream << ", ";
+  }
+  *stream << ")";
   return *this;
 }
 

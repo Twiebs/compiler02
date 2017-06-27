@@ -23,7 +23,7 @@ bool ValidateCastExpression(Compiler *compiler, CastExpression *cast);
 bool ValidateCallExpression(Compiler *c, CallExpression *call);
 
 //Validation of Non AST Helper structs
-void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params, SourceLocation& loc);
+void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params, SourceLocation& loc, Identifier *ident);
 TypeInfo ValidateVariableAccess(Compiler *compiler, SourceLocation location, VariableAccess *va);
 
 //Internal procedures

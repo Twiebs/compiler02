@@ -94,9 +94,9 @@ public:
   CodePrinter& operator<<(UnaryOperation *expression);
   CodePrinter& operator<<(BinaryOperation *binOp);
 
-
   //Single statement code printer procedures
   CodePrinter& operator<<(VariableAssignment *varAssign);
+  CodePrinter& operator<<(VariableDeclaration *varDecl);
   
   //Utility Non AST Print Routines
   CodePrinter& operator<<(Identifier *ident);

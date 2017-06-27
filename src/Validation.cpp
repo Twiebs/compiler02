@@ -48,6 +48,14 @@ bool ValidateExpression(Compiler *c, Expression *expr) {
   return true;
 }
 
+void iterate_expression_list(Expression *head, std::function<void(Expression *)> procedure) {
+  Expression *current = head;
+  while (current != nullptr) {
+    procedure(current);
+    current = current->next;
+  }
+}
+
 bool ValidateCallExpression(Compiler *c, CallExpression *call) {
   if (call->procedure == nullptr) return false;
 
@@ -57,7 +65,7 @@ bool ValidateCallExpression(Compiler *c, CallExpression *call) {
   }
 
   call->typeInfo = call->procedure->outputParameters.firstParameter->typeInfo;
-  ValidateParameterInvokation(c, &call->params, call->location); 
+  ValidateParameterInvokation(c, &call->params, call->location, call->procedure->identifier); 
   return true;
 }
 
@@ -120,10 +128,11 @@ TypeInfo ValidateVariableAccess(Compiler *compiler, SourceLocation location, Var
   return finalType;
 }
 
-void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params, SourceLocation& loc) {
+
+void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params, SourceLocation& loc, Identifier *ident) {
   if (params->parameterExpressionCount != params->parameterList->parameterCount) {
-    ReportErrorC(compiler, loc, "ParameterInvokation: " << params << " parameter count does not match " <<
-      " the count of parameter declaration " << params->parameterList << "\n");
+    ReportErrorC(compiler, loc, "Parameter count mismatch\n    Call to procedre " << ident << params->parameterList << "does not match\n    the same number of" <<
+      " parameters in call " << ident << params << "\n\n");
   }
   
   {
@@ -144,9 +153,9 @@ void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params
         assert(currentVar != nullptr);
         if (AttemptTypeCoercionIfRequired(compiler, &currentVar->typeInfo, current) == false) {
           ReportErrorC(compiler, current->location, "Parameter Type Mismatch:\n" <<
-            "    In parameter invokation " << params << " expression " << current << " of type " << &current->typeInfo <<
+            "    In parameter invokation " << ident << params << " expression " << current << " of type " << &current->typeInfo <<
             " does not match \n    parameter " << currentVar->identifier->name.string << " of type " <<
-            &currentVar->typeInfo << " in parameter declaration " << paramDecl << "\n\n");
+            &currentVar->typeInfo << " in parameter declaration " << ident << paramDecl << "\n\n");
         } 
       }
 
@@ -159,7 +168,7 @@ void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params
 bool ValidateCallStatement(Compiler *compiler, CallStatement *call) {
   if (call->procedure == nullptr) return false;
   //TODO better error
-  ValidateParameterInvokation(compiler, &call->params, call->location);
+  ValidateParameterInvokation(compiler, &call->params, call->location, call->procedure->identifier);
   return true;
 }
 
