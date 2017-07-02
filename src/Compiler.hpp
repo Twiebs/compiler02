@@ -32,7 +32,7 @@ struct Compiler {
   TypeDeclaration *typeDeclF32;
   TypeDeclaration *typeDeclF64;
 
-  uint64_t errorCount;
+  std::vector<FrontendErrorMessage> errors;
   CodePrinter printer;
 };
 

@@ -450,7 +450,7 @@ main :: ()(errorCode: S32) {
   camera.viewportWidth = CAST(F32)BUFFER_WIDTH
   camera.viewportHeight = CAST(F32)BUFFER_HEIGHT
 
-  keycount: S32
+  keycount: S32 = 0
   keystate: @U8 = SDL_GetKeyboardState(@keycount)
 
   isRunning: S32 = 1

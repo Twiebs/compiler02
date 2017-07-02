@@ -1,22 +1,22 @@
 
-void ErrorReportBegin(Compiler *c, SourceLocation& location) {
-  std::ostream& stream = std::cout;
+void ErrorReportBegin(Compiler *c, FrontendErrorType type, SourceLocation& location) {
+  std::stringstream stream;
   SourceFile *file = &c->sourceFiles[location.fileID];
   stream << "\033[31;1m" << "[" << file->absolutePath.string << ":" <<
     location.lineNumber << ":" << location.columnNumber << "] " << "\033[0m";
-  c->errorCount++;;
+  FrontendErrorMessage error = {};
+  error.type = type;
+  error.location = location;
+  stream >> error.message;
+  c->errors.push_back(error);
 }
 
-void ErrorReportStreamEnd(Compiler *c) {
-
-}
 
 void ReportError(Compiler *c, const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
   vprintf(fmt, args);
   printf("\n");
-  c->errorCount++;
 }
 
 void ReportError(Parser *p, const char *fmt, ...) {
@@ -24,7 +24,6 @@ void ReportError(Parser *p, const char *fmt, ...) {
   va_start(args, fmt);
   vprintf(fmt, args);
   printf("\n");
-  p->compiler->errorCount++;
 }
 
 void ReportError(Compiler *compiler, const SourceLocation& location, const char *fmt, ...) {
@@ -35,7 +34,6 @@ void ReportError(Compiler *compiler, const SourceLocation& location, const char 
   va_start(args, fmt);
   vprintf(fmt, args);
   printf("\033[0m\n");
-  compiler->errorCount++;
 }
 
 void ReportError(Parser *p, const SourceLocation& location, const char *fmt, ...) {
@@ -47,7 +45,6 @@ void ReportError(Parser *p, const SourceLocation& location, const char *fmt, ...
   va_start(args, fmt);
   vprintf(fmt, args);
   printf("\033[0m\n");
-  p->compiler->errorCount++;
 }
 
 void LogInfo(Parser *p, const char *fmt, ...) {

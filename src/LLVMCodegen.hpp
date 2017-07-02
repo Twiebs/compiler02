@@ -6,7 +6,7 @@
 
 #include <unordered_map>
 
-struct LLVMCodegenerator {
+struct Backend_LLVM {
   llvm::LLVMContext *context;
   llvm::Module *module;
   llvm::IRBuilder<> *builder;
@@ -31,38 +31,41 @@ struct LLVMCodegenerator {
 
 };
 
-static void CodegenReturnValuesForCurrentProcedure(LLVMCodegenerator *cg);
+static void CodegenReturnValuesForCurrentProcedure(Backend_LLVM *cg);
 
 void CodegenGlobalBlock(Compiler *compiler, Block *block);
-void CodegenStatement(LLVMCodegenerator *cg, Statement *statement);
-void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *procDecl);
-llvm::Value *CodegenExpression(LLVMCodegenerator *cg, Expression *expr);
-llvm::Type *GetLLVMType(LLVMCodegenerator *cg, TypeInfo *typeInfo);
+void CodegenStatement(Backend_LLVM *cg, Statement *statement);
+void CodegenProcedureDeclaration(Backend_LLVM *cg, ProcedureDeclaration *procDecl);
+llvm::Value *CodegenExpression(Backend_LLVM *cg, Expression *expr);
+llvm::Type *GetLLVMType(Backend_LLVM *cg, TypeInfo *typeInfo);
 
-void CodegenBlock(LLVMCodegenerator *cg, Block *block);
+void CodegenBlock(Backend_LLVM *cg, Block *block);
 
-void CodegenTypeDeclaration(LLVMCodegenerator *cg, TypeDeclaration *typeDecl);
-void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *procDecl);
-void CodegenVariableDeclaration(LLVMCodegenerator *cg, VariableDeclaration *varDecl);
-void CodegenConstantDeclaration(LLVMCodegenerator *cg, ConstantDeclaration *c);
+void CodegenTypeDeclaration(Backend_LLVM *cg, TypeDeclaration *typeDecl);
+void CodegenProcedureDeclaration(Backend_LLVM *cg, ProcedureDeclaration *procDecl);
+void CodegenVariableDeclaration(Backend_LLVM *cg, VariableDeclaration *varDecl);
+void CodegenConstantDeclaration(Backend_LLVM *cg, ConstantDeclaration *c);
 
-void CodegenVariableAssignment(LLVMCodegenerator *cg, VariableAssignment *varAssignment);
-void CodegenCallStatement(LLVMCodegenerator *cg, CallStatement *callStatement);
-void CodegenReturnStatement(LLVMCodegenerator *cg, ReturnStatement *returnStatement);
+void CodegenVariableAssignment(Backend_LLVM *cg, VariableAssignment *varAssignment);
+void CodegenCallStatement(Backend_LLVM *cg, CallStatement *callStatement);
+void CodegenReturnStatement(Backend_LLVM *cg, ReturnStatement *returnStatement);
 
-void CodegenWhileStatement(LLVMCodegenerator *cg, WhileStatement *ws);
-void CodegenIfStatement(LLVMCodegenerator *cg, IfStatement *is);
+void CodegenWhileStatement(Backend_LLVM *cg, WhileStatement *ws);
+void CodegenIfStatement(Backend_LLVM *cg, IfStatement *is);
 
-llvm::Value *CodegenIntegerLiteral(LLVMCodegenerator *cg, IntegerLiteral *intLiteral);
-llvm::Value *CodegenFloatLiteral(LLVMCodegenerator *cg, FloatLiteral *floatLiteral);
-llvm::Value *CodegenStringLiteral(LLVMCodegenerator *cg, StringLiteral *stringLiteral);
+llvm::Value *CodegenIntegerLiteral(Backend_LLVM *cg, IntegerLiteral *intLiteral);
+llvm::Value *CodegenFloatLiteral(Backend_LLVM *cg, FloatLiteral *floatLiteral);
+llvm::Value *CodegenStringLiteral(Backend_LLVM *cg, StringLiteral *stringLiteral);
 
-llvm::Value *CodegenVariableExpression(LLVMCodegenerator *cg, VariableExpression *varExpr);
-llvm::Value *CodegenCallExpression(LLVMCodegenerator *cg, CallExpression *expr);
-llvm::Value *CodegenConstantExpression(LLVMCodegenerator *cg, ConstantExpression *ce);
+llvm::Value *CodegenVariableExpression(Backend_LLVM *cg, VariableExpression *varExpr);
+llvm::Value *CodegenCallExpression(Backend_LLVM *cg, CallExpression *expr);
+llvm::Value *CodegenConstantExpression(Backend_LLVM *cg, ConstantExpression *ce);
 
-llvm::Value *CodegenCastExpression(LLVMCodegenerator *cg, CastExpression *castExpr);
-llvm::Value *CodegenUnaryOperation(LLVMCodegenerator *cg, UnaryOperation *unaryOp);
-llvm::Value *CodegenBinaryOperation(LLVMCodegenerator *cg, BinaryOperation *binOp);
+llvm::Value *CodegenCastExpression(Backend_LLVM *cg, CastExpression *castExpr);
+llvm::Value *CodegenUnaryOperation(Backend_LLVM *cg, UnaryOperation *unaryOp);
+llvm::Value *CodegenBinaryOperation(Backend_LLVM *cg, BinaryOperation *binOp);
 
-llvm::Value *CodegenSizeOfExpression(LLVMCodegenerator *cg, SizeOfExpression *expr);
+llvm::Value *CodegenSizeOfExpression(Backend_LLVM *cg, SizeOfExpression *expr);
+
+//Debgug Info generator
+void InitalizeCompileUnitAndFiles(Backend_LLVM *llvmBE);

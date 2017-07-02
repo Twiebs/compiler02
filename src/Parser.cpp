@@ -479,7 +479,7 @@ TypeDeclaration *ParseTypeDeclaration(Parser *p, Identifier *ident) {
   assert(p->token.type == TokenType_KeywordType);
   NextToken(p); //Eat TokenType_KeywordType
   if (p->token.type != TokenType_BraceOpen) {
-    ReportErrorC(p->compiler, p->token.location, "Expected open brace after declaring Type " << ident << "\n");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected open brace after declaring Type " << ident << "\n");
     return nullptr;
   }
   
@@ -820,7 +820,7 @@ WhileStatement *ParseWhileStatement(Parser *p) {
   WhileStatement *whileStatement = CreateStatement(WhileStatement, p->token.location, p);
   whileStatement->parent = p->currentBlock;
   if (p->token.type != TokenType_ParenOpen) {
-    ReportErrorC(p->compiler, p->token.location, "Expected paren open '(' after while keyword\n");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected paren open '(' after while keyword\n");
     return nullptr;
   }
 
@@ -829,7 +829,7 @@ WhileStatement *ParseWhileStatement(Parser *p) {
   whileStatement->condition = ParseExpression(p);
   if (whileStatement->condition == nullptr) return nullptr;
   if (p->token.type != TokenType_ParenClose) {
-    ReportErrorC(p->compiler, p->token.location, "Expected paren close after while condition\n");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected paren close after while condition\n");
     return nullptr;
   }
 
@@ -853,7 +853,7 @@ IfStatement *ParseIfStatement(Parser *p) {
   IfStatement *ifStatement = CreateStatement(IfStatement, p->token.location, p);
   ifStatement->parent = p->currentBlock;
   if (p->token.type != TokenType_ParenOpen) {
-    ReportErrorC(p->compiler, p->token.location, "expected open paren after if keyword\n");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "expected open paren after if keyword\n");
     return nullptr;
   }
 
@@ -861,7 +861,7 @@ IfStatement *ParseIfStatement(Parser *p) {
   ifStatement->condition = ParseExpression(p);
   if (ifStatement->condition == nullptr) return nullptr;
   if (p->token.type != TokenType_ParenClose) {
-    ReportErrorC(p->compiler, p->token.location, "Missing close paren after if statement\n");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Missing close paren after if statement\n");
     return nullptr;
   }
 
@@ -965,13 +965,6 @@ Statement *ParseStatement(Parser *p) {
   return nullptr;
 }
 
-void DebugPrintAllTokens(Parser *p) {
-  while (p->token.type != TokenType_EndOfBuffer) {
-    printf("%u (%s) %.*s\n", p->token.tokenID, TokenName[p->token.type], (int)p->token.length, p->token.text);
-    NextToken(p);
-  }
-}
-
 bool ParseEntireFile(Compiler *compiler, uint32_t fileID) {
   SourceFile *sourceFile = &compiler->sourceFiles[fileID];
   FILE *file = fopen(sourceFile->absolutePath.string, "r");
@@ -998,7 +991,7 @@ bool ParseEntireFile(Compiler *compiler, uint32_t fileID) {
   ParseCurrentBlock(&parser);
   free(fileBuffer);
 
-  if (compiler->errorCount > 0) return false;
+  if (compiler->errors.size() > 0) return false;
   return true;
 }
 

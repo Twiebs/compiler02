@@ -6,9 +6,8 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/raw_os_ostream.h"
 
-#include "LLVMDebugInfo.hpp"
 
-void CodegenStatement(LLVMCodegenerator *cg, Statement *statement) {
+void CodegenStatement(Backend_LLVM *cg, Statement *statement) {
   switch (statement->statementType) {
     case StatementType_TypeDeclaration: CodegenTypeDeclaration(cg, (TypeDeclaration *)statement); break;
     case StatementType_ProcedureDeclaration: CodegenProcedureDeclaration(cg, (ProcedureDeclaration *)statement); break;
@@ -26,7 +25,7 @@ void CodegenStatement(LLVMCodegenerator *cg, Statement *statement) {
   };
 }
 
-llvm::Value *CodegenExpression(LLVMCodegenerator *cg, Expression *expr) {
+llvm::Value *CodegenExpression(Backend_LLVM *cg, Expression *expr) {
   switch (expr->expressionType) {
     case ExpressionType_IntegerLiteral: return CodegenIntegerLiteral(cg, (IntegerLiteral *)expr);
     case ExpressionType_FloatLiteral:  return CodegenFloatLiteral(cg, (FloatLiteral *)expr);
@@ -47,7 +46,7 @@ llvm::Value *CodegenExpression(LLVMCodegenerator *cg, Expression *expr) {
   return nullptr;
 }
 
-llvm::Value *CodegenBranchCondition(LLVMCodegenerator *cg, Expression *e) {
+llvm::Value *CodegenBranchCondition(Backend_LLVM *cg, Expression *e) {
   llvm::Value *condExpr = CodegenExpression(cg, e);
   if (e->expressionType == ExpressionType_IntegerLiteral) {
     llvm::Type *destType = cg->builder->getInt1Ty();
@@ -57,7 +56,7 @@ llvm::Value *CodegenBranchCondition(LLVMCodegenerator *cg, Expression *e) {
   return condExpr;
 }
 
-void CodegenIfStatement(LLVMCodegenerator *cg, IfStatement *is) {
+void CodegenIfStatement(Backend_LLVM *cg, IfStatement *is) {
   llvm::BasicBlock *condBlock = llvm::BasicBlock::Create(*cg->context, "if.condition", cg->currentFunction);
   llvm::BasicBlock *bodyBlock = llvm::BasicBlock::Create(*cg->context, "if.body", cg->currentFunction);
   llvm::BasicBlock *exitBlock = llvm::BasicBlock::Create(*cg->context, "merge", cg->currentFunction);
@@ -105,7 +104,7 @@ void CodegenIfStatement(LLVMCodegenerator *cg, IfStatement *is) {
   cg->builder->SetInsertPoint(exitBlock);
 }
 
-void CodegenWhileStatement(LLVMCodegenerator *cg, WhileStatement *ws) {
+void CodegenWhileStatement(Backend_LLVM *cg, WhileStatement *ws) {
   llvm::BasicBlock *condBlock = llvm::BasicBlock::Create(*cg->context, "while.condition", cg->currentFunction);
   llvm::BasicBlock *bodyBlock = llvm::BasicBlock::Create(*cg->context, "while.body", cg->currentFunction);
   llvm::BasicBlock *exitBlock = llvm::BasicBlock::Create(*cg->context, "while.exit", cg->currentFunction);
@@ -125,7 +124,7 @@ void CodegenWhileStatement(LLVMCodegenerator *cg, WhileStatement *ws) {
   cg->builder->SetInsertPoint(exitBlock);
 }
 
-void CodegenBlock(LLVMCodegenerator *cg, Block *block) {
+void CodegenBlock(Backend_LLVM *cg, Block *block) {
   Statement *currentStatement = block->firstStatement;
   while (currentStatement != nullptr) {
     CodegenStatement(cg, currentStatement);
@@ -183,7 +182,7 @@ bool WriteNativeObjectToFile(Compiler *compiler, llvm::Module *module, const cha
 }
 
 void CodegenGlobalBlock(Compiler *compiler, Block *block) {
-  LLVMCodegenerator llvmCG = {};
+  Backend_LLVM llvmCG = {};
   llvmCG.context = new llvm::LLVMContext();
   llvmCG.module = new llvm::Module("Compiler", *llvmCG.context);
   llvmCG.builder = new llvm::IRBuilder<>(*llvmCG.context);
@@ -230,7 +229,7 @@ void CodegenGlobalBlock(Compiler *compiler, Block *block) {
   }
 }
 
-void CodegenTypeDeclaration(LLVMCodegenerator *cg, TypeDeclaration *typeDecl) {
+void CodegenTypeDeclaration(Backend_LLVM *cg, TypeDeclaration *typeDecl) {
   if (typeDecl->statementCount > 0) {
     llvm::Type **memberTypeRefs = (llvm::Type **)alloca(sizeof(llvm::Type *) * typeDecl->statementCount);
     VariableDeclaration *currentVarDecl = (VariableDeclaration *)typeDecl->firstStatement;
@@ -247,7 +246,7 @@ void CodegenTypeDeclaration(LLVMCodegenerator *cg, TypeDeclaration *typeDecl) {
   }
 }
 
-llvm::Type *GetLLVMType(LLVMCodegenerator *cg, TypeInfo *typeInfo) {
+llvm::Type *GetLLVMType(Backend_LLVM *cg, TypeInfo *typeInfo) {
   assert(typeInfo->type->llvmType != nullptr);
   llvm::Type *currentType = typeInfo->type->llvmType;
   if (typeInfo->indirectionLevel > 0) {
@@ -260,7 +259,7 @@ llvm::Type *GetLLVMType(LLVMCodegenerator *cg, TypeInfo *typeInfo) {
 }
 
 
-static void GenerateLinearizedAllocasForBlock(LLVMCodegenerator *cg, Block *block) {
+static void GenerateLinearizedAllocasForBlock(Backend_LLVM *cg, Block *block) {
   assert(block->statementType != StatementType_TypeDeclaration);
   Statement *current = block->firstStatement;
   while (current != nullptr) {
@@ -290,7 +289,7 @@ static void GenerateLinearizedAllocasForBlock(LLVMCodegenerator *cg, Block *bloc
   }
 }
 
-void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *procDecl) {
+void CodegenProcedureDeclaration(Backend_LLVM *cg, ProcedureDeclaration *procDecl) {
   llvm::Type **argumentTypes = (llvm::Type **)alloca(sizeof(llvm::Type *) * procDecl->inputParameters.parameterCount);
   VariableDeclaration *currentDecl = procDecl->inputParameters.firstParameter;
   size_t currentArgumentIndex = 0;
@@ -370,18 +369,18 @@ void CodegenProcedureDeclaration(LLVMCodegenerator *cg, ProcedureDeclaration *pr
   cg->currentProcedure = lastProcedure;
 }
 
-void CodegenVariableDeclaration(LLVMCodegenerator *cg, VariableDeclaration *varDecl) {
+void CodegenVariableDeclaration(Backend_LLVM *cg, VariableDeclaration *varDecl) {
   if (varDecl->initalExpression != nullptr) {
     llvm::Value *llvmValue = CodegenExpression(cg, varDecl->initalExpression);
     llvm::Value *store = cg->builder->CreateStore(llvmValue, varDecl->llvmAlloca);
   }
 }
 
-void CodegenConstantDeclaration(LLVMCodegenerator *cg, ConstantDeclaration *cd) {
+void CodegenConstantDeclaration(Backend_LLVM *cg, ConstantDeclaration *cd) {
   cd->backendPointer = CodegenExpression(cg, cd->expression);
 }
 
-llvm::Value *CodegenVariableAccess(LLVMCodegenerator *cg, VariableAccess *va) {
+llvm::Value *CodegenVariableAccess(Backend_LLVM *cg, VariableAccess *va) {
   int currentIndex = 0;
   llvm::Value *currentPtr = va->variable->llvmAlloca;
   VariableDeclaration *currentVar = va->variable;
@@ -435,13 +434,13 @@ llvm::Value *CodegenVariableAccess(LLVMCodegenerator *cg, VariableAccess *va) {
   return currentPtr;
 }
 
-void CodegenVariableAssignment(LLVMCodegenerator *cg, VariableAssignment *varAssignment) {
+void CodegenVariableAssignment(Backend_LLVM *cg, VariableAssignment *varAssignment) {
   llvm::Value *value = CodegenExpression(cg, varAssignment->expression);
   llvm::Value *storePtr = CodegenVariableAccess(cg, &varAssignment->variableAccess);
   llvm::Value *store = cg->builder->CreateStore(value, storePtr);
 }
 
-void CodegenCallStatement(LLVMCodegenerator *cg, CallStatement *callStatement) {
+void CodegenCallStatement(Backend_LLVM *cg, CallStatement *callStatement) {
   llvm::Value **argValues = (llvm::Value **)alloca(sizeof(llvm::Value *) * callStatement->params.parameterExpressionCount);
   Expression *currentArgument = callStatement->params.firstParameterExpression;
   int currentArgumentIndex = 0;
@@ -454,7 +453,7 @@ void CodegenCallStatement(LLVMCodegenerator *cg, CallStatement *callStatement) {
   llvm::Value *value = cg->builder->CreateCall(callStatement->procedure->llvmFunction, arrayRef);
 }
 
-static void CodegenReturnValuesForCurrentProcedure(LLVMCodegenerator *cg) {
+static void CodegenReturnValuesForCurrentProcedure(Backend_LLVM *cg) {
   if (cg->currentProcedure->outputParameters.parameterCount > 0) {
     VariableDeclaration *currentDecl = cg->currentProcedure->outputParameters.firstParameter;
     llvm::Value *load = cg->builder->CreateLoad(currentDecl->llvmAlloca);
@@ -464,11 +463,11 @@ static void CodegenReturnValuesForCurrentProcedure(LLVMCodegenerator *cg) {
   }
 }
 
-void CodegenReturnStatement(LLVMCodegenerator *cg, ReturnStatement *returnStatement) {
+void CodegenReturnStatement(Backend_LLVM *cg, ReturnStatement *returnStatement) {
   CodegenReturnValuesForCurrentProcedure(cg);
 }
 
-llvm::Value *CodegenIntegerLiteral(LLVMCodegenerator *cg, IntegerLiteral *intLiteral) {
+llvm::Value *CodegenIntegerLiteral(Backend_LLVM *cg, IntegerLiteral *intLiteral) {
   //this int lieral was implicitly coerced into a ptr type
   if (intLiteral->typeInfo.indirectionLevel > 0) {
     llvm::Type *ptrType = GetLLVMType(cg, &intLiteral->typeInfo);
@@ -489,7 +488,7 @@ llvm::Value *CodegenIntegerLiteral(LLVMCodegenerator *cg, IntegerLiteral *intLit
   return result;
 }
 
-llvm::Value *CodegenFloatLiteral(LLVMCodegenerator *cg, FloatLiteral *floatLiteral) {
+llvm::Value *CodegenFloatLiteral(Backend_LLVM *cg, FloatLiteral *floatLiteral) {
   llvm::Value *result;
   if (floatLiteral->typeInfo.type == cg->compiler->typeDeclF32) {
     result = llvm::ConstantFP::get(llvm::Type::getFloatTy(*cg->context), floatLiteral->value);
@@ -500,12 +499,12 @@ llvm::Value *CodegenFloatLiteral(LLVMCodegenerator *cg, FloatLiteral *floatLiter
   return result;
 }
 
-llvm::Value *CodegenStringLiteral(LLVMCodegenerator *cg, StringLiteral *stringLiteral) {
+llvm::Value *CodegenStringLiteral(Backend_LLVM *cg, StringLiteral *stringLiteral) {
   llvm::Value *result = cg->builder->CreateGlobalStringPtr(stringLiteral->value.string);
   return result;
 }
 
-llvm::Value *CodegenCastExpression(LLVMCodegenerator *cg, CastExpression *castExpr) {
+llvm::Value *CodegenCastExpression(Backend_LLVM *cg, CastExpression *castExpr) {
   TypeInfo *dest = &castExpr->typeInfo;
   TypeInfo *src = &castExpr->expression->typeInfo;
   llvm::Value *value = CodegenExpression(cg, castExpr->expression);
@@ -557,7 +556,7 @@ llvm::Value *CodegenCastExpression(LLVMCodegenerator *cg, CastExpression *castEx
   return result;
 }
 
-llvm::Value *CodegenBinaryOperation(LLVMCodegenerator *cg, BinaryOperation *binop) {
+llvm::Value *CodegenBinaryOperation(Backend_LLVM *cg, BinaryOperation *binop) {
   llvm::Value *lhsValue = CodegenExpression(cg, binop->lhs);
   llvm::Value *rhsValue = CodegenExpression(cg, binop->rhs);
   assert(lhsValue != nullptr && rhsValue != nullptr);
@@ -676,18 +675,18 @@ llvm::Value *CodegenBinaryOperation(LLVMCodegenerator *cg, BinaryOperation *bino
   return result;
 }
 
-llvm::Value *CodegenVariableExpression(LLVMCodegenerator *cg, VariableExpression *varExpr) {
+llvm::Value *CodegenVariableExpression(Backend_LLVM *cg, VariableExpression *varExpr) {
   llvm::Value *ptr = CodegenVariableAccess(cg, &varExpr->variableAccess);
   llvm::Value *load = cg->builder->CreateLoad(ptr);
   return load;
 }
 
-llvm::Value *CodegenConstantExpression(LLVMCodegenerator *cg, ConstantExpression *ce) {
+llvm::Value *CodegenConstantExpression(Backend_LLVM *cg, ConstantExpression *ce) {
   llvm::Value *result = (llvm::Value *)ce->constant->backendPointer;
   return result;
 }
 
-llvm::Value *CodegenCallExpression(LLVMCodegenerator *cg, CallExpression *callExpr) {
+llvm::Value *CodegenCallExpression(Backend_LLVM *cg, CallExpression *callExpr) {
   assert(callExpr->procedure->llvmFunction != nullptr);
   llvm::Value **argValues = (llvm::Value **)alloca(sizeof(llvm::Value *) * callExpr->params.parameterExpressionCount);
   Expression *currentArgument = callExpr->params.firstParameterExpression;
@@ -702,7 +701,7 @@ llvm::Value *CodegenCallExpression(LLVMCodegenerator *cg, CallExpression *callEx
   return value;
 }
 
-llvm::Value *CodegenUnaryOperation(LLVMCodegenerator *cg, UnaryOperation *unaryOp) {
+llvm::Value *CodegenUnaryOperation(Backend_LLVM *cg, UnaryOperation *unaryOp) {
   if (unaryOp->unaryToken == TokenType_SymbolAddress) {
     llvm::Value *exprValue = nullptr;
     if (unaryOp->expression->expressionType == ExpressionType_VariableExpression) {
@@ -754,9 +753,47 @@ llvm::Value *CodegenUnaryOperation(LLVMCodegenerator *cg, UnaryOperation *unaryO
   return nullptr;
 }
 
-llvm::Value *CodegenSizeOfExpression(LLVMCodegenerator *cg, SizeOfExpression *expr) {
+llvm::Value *CodegenSizeOfExpression(Backend_LLVM *cg, SizeOfExpression *expr) {
   const llvm::DataLayout& dataLayout = cg->module->getDataLayout();
   llvm::Type *type = GetLLVMType(cg, &expr->sizeOfTypeInfo);
   uint64_t size = dataLayout.getTypeSizeInBits(type) / 8;
   return cg->builder->getInt64(size);
+}
+
+
+void InitalizeCompileUnitAndFiles(Backend_LLVM *llvmBE) {
+  Compiler *c = llvmBE->compiler;
+  llvmBE->diFiles.reserve(c->sourceFiles.size());
+  for (size_t i = 0; i < c->sourceFiles.size(); i++) {
+    SourceFile *file = &c->sourceFiles[i];
+    llvmBE->diFiles.push_back(llvmBE->dibuilder->createFile(file->absolutePath.string, file->absolutePath.string));
+  }
+
+  uint32_t lang = llvm::dwarf::DW_LANG_C;
+  const char *producer = "skylang";
+  bool isOptimized = false;    
+  llvmBE->dibuilder->createCompileUnit(lang, llvmBE->diFiles[0], producer, isOptimized, "", 0);
+}
+
+llvm::DIType *Backend_LLVM::GetDIType(TypeInfo *typeInfo) {
+  char *name = typeInfo->type->identifier->name.string;
+  llvm::DIType *result = diTypeMap[name];
+  for (auto i = 0; i < typeInfo->indirectionLevel; i++) {
+    result = dibuilder->createPointerType(result, 64);
+  }
+
+  return result;
+}
+
+void Backend_LLVM::CreateDebugInfoForProcedure(ProcedureDeclaration *procedure) {
+  llvm::DIFile *file = diFiles[procedure->location.fileID];
+  llvm::DIType *parameterTypes[procedure->inputParameters.parameterCount];
+  //llvm::ArrayRef<llvm::DIType *> arrayRef(parameterTypes, procedure->params.parameterCount);
+  //DITypeArrayRef diArrayRef = dibuilder->getOrCreateTypeArray(arrayRef);
+  //Return type is at zero index
+  llvm::DISubroutineType *type = 0; //dibuilder->createSubroutineType();
+
+  llvm::DISubprogram *subprogram = dibuilder->createFunction(
+    currentDebugScope, procedure->identifier->name.string, "", file, procedure->location.lineNumber,
+    type, false /* internal linkage */, true /* definition */, procedure->location.lineNumber);
 }

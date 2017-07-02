@@ -60,7 +60,7 @@ bool ValidateCallExpression(Compiler *c, CallExpression *call) {
   if (call->procedure == nullptr) return false;
 
   if (call->procedure->outputParameters.parameterCount == 0) {
-    ReportErrorC(c, call->location, "Call to procedure " << call->procedure->identifier <<
+    ReportErrorC(c, FrontendErrorType_Unspecified, call->location, "Call to procedure " << call->procedure->identifier <<
     " is being used as an expression but the return type is Void\n");
   }
 
@@ -105,12 +105,13 @@ TypeInfo ValidateVariableAccess(Compiler *compiler, SourceLocation location, Var
 
       //TODO Figure out where we store location
       if (var->typeInfo.indirectionLevel == 0 && var->typeInfo.arraySize == 0) {
-        ReportErrorC(compiler, location, "Cannot derefrence non pointer type " <<
+        ReportErrorC(compiler, FrontendErrorType_DerefrenceOfNonPointer, location, "Cannot derefrence non pointer type " <<
           &var->typeInfo << "\n");
       }
 
+      //TODO This case needs to be handled properly
       if (var->typeInfo.indirectionLevel > 2 && i != va->accessCount - 1) {
-        ReportErrorC(compiler, location, "Pointer has to many levels of indirection to deref in the middle of a var access");
+        ReportErrorC(compiler, FrontendErrorType_Unspecified, location, "Pointer has to many levels of indirection to deref in the middle of a var access");
       }
     }
 
@@ -131,7 +132,7 @@ TypeInfo ValidateVariableAccess(Compiler *compiler, SourceLocation location, Var
 
 void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params, SourceLocation& loc, Identifier *ident) {
   if (params->parameterExpressionCount != params->parameterList->parameterCount) {
-    ReportErrorC(compiler, loc, "Parameter count mismatch\n    Call to procedre " << ident << params->parameterList << "does not match\n    the same number of" <<
+    ReportErrorC(compiler, FrontendErrorType_TypeMismatch, loc, "Parameter count mismatch\n    Call to procedre " << ident << params->parameterList << "does not match\n    the same number of" <<
       " parameters in call " << ident << params << "\n\n");
   }
   
@@ -152,7 +153,7 @@ void ValidateParameterInvokation(Compiler *compiler, ParameterInvokation *params
       if (current->typeInfo.type != nullptr) {
         assert(currentVar != nullptr);
         if (AttemptTypeCoercionIfRequired(compiler, &currentVar->typeInfo, current) == false) {
-          ReportErrorC(compiler, current->location, "Parameter Type Mismatch:\n" <<
+          ReportErrorC(compiler, FrontendErrorType_TypeMismatch, current->location, "Parameter Type Mismatch:\n" <<
             "    In parameter invokation " << ident << params << " expression " << current << " of type " << &current->typeInfo <<
             " does not match \n    parameter " << currentVar->identifier->name.string << " of type " <<
             &currentVar->typeInfo << " in parameter declaration " << ident << paramDecl << "\n\n");
@@ -243,7 +244,7 @@ bool ValidateBinaryOperation(Compiler *compiler, BinaryOperation *binOp) {
 
   bool result = AttemptTypeCoercionIfRequiredExpr(compiler, binOp->lhs, binOp->rhs);
   if (result == false) {
-    ReportErrorC(compiler, binOp->location, "Binary Operand Type Mismatch:\n  LHS expression '" <<
+    ReportErrorC(compiler, FrontendErrorType_TypeMismatch, binOp->location, "Binary Operand Type Mismatch:\n  LHS expression '" <<
       binOp->lhs << "' of type '" << &binOp->lhs->typeInfo << "' does not match RHS expression '" <<
       binOp->rhs << "' of type '" << &binOp->rhs->typeInfo << "'\n");
   } 
@@ -273,7 +274,7 @@ bool ValidateVariableAssignment(Compiler *compiler, VariableAssignment *varAssig
   if (AttemptTypeCoercionIfRequired(compiler, &type, varAssign->expression) == false) {
     Identifier *varIdent = varAssign->variableAccess.variable->identifier;
     Identifier *typeIdent = varAssign->expression->typeInfo.type->identifier;
-    ReportErrorC(compiler, varAssign->location, "Cannot assign expression " <<
+    ReportErrorC(compiler, FrontendErrorType_TypeMismatch, varAssign->location, "Cannot assign expression " <<
       varAssign->expression << " of type " << &varAssign->expression->typeInfo <<
       " to variable " << &varAssign->variableAccess << " of type " << &varAssign->typeInfo << "\n");
     return false;
@@ -339,7 +340,7 @@ bool ValidateVariableDeclaration(Compiler *compiler, VariableDeclaration *varDec
   }
 
   if (AttemptTypeCoercionIfRequired(compiler, &varDecl->typeInfo, varDecl->initalExpression) == false) {
-    ReportErrorC(compiler, varDecl->location, "Variable Declaration Type mismatch: Expected expression of type " <<
+    ReportErrorC(compiler, FrontendErrorType_TypeMismatch, varDecl->location, "Variable Declaration Type mismatch: Expected expression of type " <<
       &varDecl->typeInfo << " Actual type was " << &varDecl->initalExpression->typeInfo << "\n");
     return false;
   }
@@ -351,7 +352,7 @@ void ValidateProcedureDeclaration(Compiler *compiler, ProcedureDeclaration *proc
   //ValidateParameterDeclaration(procDecl->inputParameters);
   //ValidateParametersDeclaration(procDecl->outputParameters);
   if (procDecl->outputParameters.parameterCount > 1) {
-    ReportErrorC(compiler, procDecl->location, "Compiler does noy support " <<
+    ReportErrorC(compiler, FrontendErrorType_Unspecified, procDecl->location, "Compiler does noy support " <<
       "multipule return values at this time");
   }
   ValidateBlock(compiler, procDecl);
@@ -362,7 +363,7 @@ bool ValidateBlock(Compiler *compiler, Block *block) {
   bool returnStatementSeen = false;
   while (statement != nullptr) {
     if (returnStatementSeen) {
-      ReportErrorC(compiler, statement->location, "Cannot declare statement after return\n");
+      ReportErrorC(compiler, FrontendErrorType_InvalidStatement, statement->location, "Cannot declare statement after return\n");
     }
     ValidateStatement(compiler, statement);
 
@@ -390,7 +391,7 @@ bool ValidateUnaryOperation(Compiler *compiler, UnaryOperation *unaryOp) {
     if (unaryOp->expression->expressionType == ExpressionType_IntegerLiteral ||
         unaryOp->expression->expressionType == ExpressionType_FloatLiteral ||
         unaryOp->expression->expressionType == ExpressionType_StringLiteral) {
-      ReportError(compiler, unaryOp->location, "cannot take address of literal");
+      ReportErrorC(compiler, FrontendErrorType_InvalidStatement, unaryOp->location, "cannot take address of literal");
       return false;
     }
   }
@@ -399,7 +400,7 @@ bool ValidateUnaryOperation(Compiler *compiler, UnaryOperation *unaryOp) {
       unaryOp->unaryToken == TokenType_BitwiseNot ||
       unaryOp->unaryToken == TokenType_SymbolSub) {
     if (unaryOp->unaryCount > 1 ) {
-      ReportError(compiler, unaryOp->location, "Only one unary token is permitted");
+      ReportErrorC(compiler, FrontendErrorType_InvalidStatement, unaryOp->location, "Only one unary token is permitted");
       return false;
     }
   }

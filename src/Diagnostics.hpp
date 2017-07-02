@@ -18,6 +18,21 @@ enum class TerminalColor {
   LightGreen,
 };
 
+enum FrontendErrorType {
+  FrontendErrorType_None,
+  FrontendErrorType_Unspecified,
+  FrontendErrorType_Syntax,
+  FrontendErrorType_DerefrenceOfNonPointer,
+  FrontendErrorType_TypeMismatch,
+  FrontendErrorType_InvalidStatement,
+};
+
+struct FrontendErrorMessage {
+  FrontendErrorType type;
+  SourceLocation location;
+  std::string message;
+};
+
 static const char *TerminalColorStrings[] = {
   "", //None
   "\033[0m", //Default
@@ -58,9 +73,9 @@ void ReportWarning(Parser *p, const SourceLocation& location, const char *fmt, .
 //There does not seem to be a nice way to make this api without resorting
 //to dirty macro hacks.  These routines exist so that the frontend can
 //more eaisly be transitioned into a multithreaded pass if desired.
-void ErrorReportBegin(Compiler *c, SourceLocation& location);
-void ErrorReportStreamEnd(Compiler *c);
-#define ReportErrorC(c,l, msg) ErrorReportBegin(c, l); c->printer << msg
+void ErrorReportBegin(Compiler *c, FrontendErrorType type, SourceLocation& location);
+
+#define ReportErrorC(c, t, l, msg) ErrorReportBegin(c, t, l); c->printer << msg
 
 //Internal logging routines for developer use and only
 void LogInfo(Parser *p, const char *fmt, ...);

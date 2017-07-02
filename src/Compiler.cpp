@@ -19,6 +19,7 @@ exit
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include <unistd.h>
 
@@ -56,7 +57,6 @@ struct SourceLocation {
 #include "Diagnostics.cpp"
 #include "LLVMCodegen.cpp"
 #include "ReadableCBackend.cpp"
-#include "LLVMDebugInfo.cpp"
 
 void InitalizeCompiler(Compiler *compiler) {
   InitalizeAllocator(&compiler->stringAllocator, 32768);
@@ -68,6 +68,7 @@ void InitalizeCompiler(Compiler *compiler) {
   compiler->printer.defaultColor = TerminalColor::Default;
   compiler->printer.keywordColor = TerminalColor::Magenta;
 
+  //TODO Make a safer version of this
   char cwd[1024] = {};
   if (getcwd(cwd, sizeof(cwd)) == 0) {
     printf("failed to getcwd\n");
@@ -194,7 +195,7 @@ bool BuildProject(Compiler *compiler) {
   }
 
 
-  if (compiler->errorCount > 0) return false;
+  if (compiler->errors.size() > 0) return false;
   CodegenGlobalBlock(compiler, compiler->globalBlock);
 
   if (compiler->settings.emitReadableCCode) {
