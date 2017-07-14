@@ -18,9 +18,11 @@ struct Compiler {
   std::vector<SourceFile> sourceFiles;
   PersistantBlockAllocator stringAllocator;
   PersistantBlockAllocator astAllocator;
+  Allocator_Stack stack_allocator;
 
+  //TODO move this to be per file
   Block *globalBlock;
-  TypeDeclaration *typeAny;
+
   TypeDeclaration *typeDeclU8;
   TypeDeclaration *typeDeclU16;
   TypeDeclaration *typeDeclU32;

@@ -25,6 +25,7 @@ enum FrontendErrorType {
   FrontendErrorType_DerefrenceOfNonPointer,
   FrontendErrorType_TypeMismatch,
   FrontendErrorType_InvalidStatement,
+  FrontendErrorType_NonConstantExpression,
 };
 
 struct FrontendErrorMessage {
@@ -61,21 +62,13 @@ static const char *TERMINAL_COLOR_DEFAULT = "\033[0m";
 //while still keeping the API simple and transparent from the parsers
 //perspective
 
-//User level logging routines that notify user of errors and warnings
-//found while parsing or analyizing the code
-void ReportError(Compiler *c, const char *fmt, ...);
-void ReportError(Parser *p, const char *fmt, ...);
-void ReportWarning(Parser *p, const char *fmt, ...);
-void ReportError(Compiler *c, const SourceLocation& location, const char *fmt, ...);
-void ReportError(Parser *p, const SourceLocation& location, const char *fmt, ...);
-void ReportWarning(Parser *p, const SourceLocation& location, const char *fmt, ...);
-
 //There does not seem to be a nice way to make this api without resorting
 //to dirty macro hacks.  These routines exist so that the frontend can
 //more eaisly be transitioned into a multithreaded pass if desired.
 void ErrorReportBegin(Compiler *c, FrontendErrorType type, SourceLocation& location);
-
 #define ReportErrorC(c, t, l, msg) ErrorReportBegin(c, t, l); c->printer << msg
+
+void ReportInternalError(Compiler *c, const char *fmt);
 
 //Internal logging routines for developer use and only
 void LogInfo(Parser *p, const char *fmt, ...);
@@ -89,7 +82,7 @@ class CodePrinter {
   void setColor(TerminalColor color);
 
 public:
-  std::ostream *stream;
+  Allocator_Stack *stack_allocator;
 
   TerminalColor typeColor;
   TerminalColor variableColor;
@@ -119,19 +112,6 @@ public:
   CodePrinter& operator<<(ParameterInvokation *params);
   CodePrinter& operator<<(ParameterDeclaration *params);
   CodePrinter& operator<<(VariableAccess *variableAccess);
-};
-
-//This class wraps a abstract std::ostream and provides
-//pretty printing of the AST in a xml like tree representation.
-class ASTPrinter {
-public:
-  ASTPrinter(std::ostream& s);
-
-private:
-  std::ostream& stream;
-  TerminalColor statementColor;
-  TerminalColor expressionColor;
-  void setCurrentColor(TerminalColor color);
 };
 
 //Debug procedures to pretty print AST represntation of

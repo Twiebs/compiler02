@@ -86,20 +86,6 @@ struct Identifier {
   Identifier *next;
 };
 
-#if 0
-class IdentifierList {
-public:
-  void append(Identifier *identifier);
-  Identifier *find(const char *string, size_t length);
-
-private:
-  IdentifierList *parentList;
-  Identifier *firstIdentifier;
-  Identifier *lastIdentifier;
-  int identifierCount;
-};
-#endif
-
 struct Block : Statement {
   Identifier *firstIdentifier;
   Identifier *lastIdentifier;

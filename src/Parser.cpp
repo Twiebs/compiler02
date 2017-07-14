@@ -93,7 +93,7 @@ bool ParseVariableAccess(Parser *p, VariableAccess *variableAccess, TypeInfo *ou
     NextToken(p); //Eat ArrayOpen
     subscriptExpressions[0] = ParseExpression(p);
     if (p->token.type != TokenType_ArrayClose) {
-      ReportError(p, p->token.location, "Expected subscript close ']'");
+      ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected subscript close ']'");
       return false;
     }
     NextToken(p); //Eat ArrayClose
@@ -102,22 +102,20 @@ bool ParseVariableAccess(Parser *p, VariableAccess *variableAccess, TypeInfo *ou
   TypeInfo *currentType = &variableAccess->variable->typeInfo;
   while (p->token.type == TokenType_SymbolDot && accessCount < 256) {
     if (currentType->type->statementType != StatementType_TypeDeclaration) {
-      ReportError(p, p->token.location, "Cannot access field '%.*s'", (int)p->token.length, p->token.text);
+      ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "Cannot access field " << p->token.text);
       return false;
     }
 
     NextToken(p); //Eat the Dot token
     if (p->token.type != TokenType_Identifier) {
-      ReportError(p, p->token.location, "Expected identifier to follow '.' operator");
+      ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected identifier to follow '.' operator");
       return false;
     }
 
     Identifier *memberIdent = FindIdentifierInType(currentType->type, p->token, &accessIndices[accessCount]);
     if (memberIdent == nullptr) {
       Identifier *typeIdent = currentType->type->identifier;
-      ReportError(p, p->token.location, "Type '%.*s' has no member named '%.*s'",
-        (int)typeIdent->name.length, typeIdent->name.string,
-        (int)p->token.length, p->token.text);
+      ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "Type " << typeIdent->name.string << "has no member named " << p->token.text);
     } else {
       VariableDeclaration *memberDecl = (VariableDeclaration *)memberIdent->declaration;
       currentType = &memberDecl->typeInfo;
@@ -129,7 +127,7 @@ bool ParseVariableAccess(Parser *p, VariableAccess *variableAccess, TypeInfo *ou
       NextToken(p); //Eat ArrayOpen
       subscriptExpressions[accessCount] = ParseExpression(p);
       if (p->token.type != TokenType_ArrayClose) {
-        ReportError(p, p->token.location, "Expected subscript close ']'");
+        ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected subscript close ']'");
         return false;
       }
       NextToken(p); //Eat ArrayClose
@@ -142,7 +140,7 @@ bool ParseVariableAccess(Parser *p, VariableAccess *variableAccess, TypeInfo *ou
   //by some procedural method, or they need to seek mental health care.  
   if (accessCount >= 256) {
     //NOTE Sarcasm intended
-    ReportError(p, "Hello user!  It looks like you might be auto-generating code and "
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Hello user!  It looks like you might be auto-generating code and "
       "feeding it to the compiler.  If this is not the case just know that it "
       "is okay; you don't have to be alone anymore'  There are profesional "
       "mental health services availiable and there is no shame in seeking them out "
@@ -177,7 +175,7 @@ bool ParseParameterInvokation(Parser *p, ParameterInvokation *params) {
     }        
     params->parameterExpressionCount++;
     if (p->token.type != TokenType_SymbolComma && p->token.type != TokenType_ParenClose && p->token.type != TokenType_EndOfBuffer) {
-      ReportError(p, p->token.location, "Expected comma in parameter invokation");
+      ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected comma in parameter invokation");
       return false;
     }
 
@@ -187,7 +185,7 @@ bool ParseParameterInvokation(Parser *p, ParameterInvokation *params) {
   }
 
   if (p->token.type == TokenType_EndOfBuffer) {
-    ReportError(p, "Reached End of buffer while parsing params invokation");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Reached End of buffer while parsing params invokation");
     return false;
   }
 
@@ -201,7 +199,7 @@ CastExpression *ParseCastExpression(Parser *p) {
   assert(p->token.type == TokenType_KeywordCast);
   NextToken(p); //Eat TokenType_KeywordCast
   if (p->token.type != TokenType_ParenOpen) {
-    ReportError(p, "Must open partrns after Cast keyword");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Must open partrns after Cast keyword");
     return nullptr;
   }
 
@@ -209,7 +207,7 @@ CastExpression *ParseCastExpression(Parser *p) {
   CastExpression *castExpr = CreateExpression(CastExpression, p->token.location, p);
   ParseTypeInfo(p, &castExpr->typeInfo);
   if (p->token.type != TokenType_ParenClose) {
-    ReportError(p, "must close paren after ast thing");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "must close paren after ast thing");
     return nullptr;
   }
   NextToken(p); //Eat the ParenClose
@@ -224,24 +222,24 @@ static InitalizerExpression *ParseInitializerExpression(Parser *p, Token identTo
 
   Identifier *ident = FindIdentifier(p->currentBlock, p->token);
   if (ident == nullptr) {
-    ReportError(p, p->token.location, "Could not find identifier %.*s", p->token.length, p->token.text);
+    ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "Could not find identifier %.*s" << p->token.text);
   } else if (ident->declaration->statementType != StatementType_TypeDeclaration) {
-    ReportError(p, identToken.location, "This is not a type");
+    ReportErrorC(p->compiler, FrontendErrorType_Unspecified, identToken.location, "This is not a type");
   } else if (IsSimpleType((TypeDeclaration *)ident->declaration, p->compiler)) {
-    ReportError(p, identToken.location, "Type is not simple");
+    ReportErrorC(p->compiler, FrontendErrorType_Unspecified, identToken.location, "Type is not simple");
   }
 
   TypeDeclaration *type = (TypeDeclaration *)ident->declaration;
 
   while (p->token.type != TokenType_BraceClose && p->token.type != TokenType_EndOfBuffer) {
     if (p->token.type != TokenType_Identifier) {
-      ReportError(p, p->token.location, "Expected identifier");
+      ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected identifier");
     } else {
       Identifier *identifier = FindIdentifier(type, p->token);
       if (identifier == nullptr) {
         //TODO search for the identifier and see if we can find it in the scope
         //and report an error about what we found
-        ReportError(p, p->token.location, "Type does not have identifier");
+        ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Type does not have identifier");
       }
 
       NextToken(p); //Eat TokenType_Identifier
@@ -261,17 +259,16 @@ static CallExpression *ParseCallExpression(Parser *p, Token identToken) {
   Identifier *ident = FindIdentifier(p->currentBlock, identToken);
   if (ident == nullptr) {
     //TODO defer checking if the ident is unresolved untill validation
-    ReportError(p, identToken.location, "Could not find identifier %.*s when parsing call expression\n",
-      identToken.length, identToken.text);
+    ReportErrorC(p->compiler, FrontendErrorType_Unspecified, identToken.location, "Could not find identifier " << identToken.text << " when parsing call expression\n");
   } else {
     if (ident->declaration->statementType == StatementType_ProcedureDeclaration) {
       ProcedureDeclaration *procDecl = (ProcedureDeclaration *)ident->declaration;
       callExpr->params.parameterList = &procDecl->inputParameters;
       callExpr->procedure = procDecl;
     } else if (ident->declaration->statementType == StatementType_TypeDeclaration) {
-      ReportError(p, "cant call type");
+      ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "cant call type");
     } else {
-      ReportError(p, "Attempting to cast to or call from variable");
+      ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "Attempting to cast to or call from variable");
     }
   }
   
@@ -331,8 +328,8 @@ Expression *ParsePrimaryExpression(Parser *p) {
       else {
         Identifier *ident = FindIdentifier(p->currentBlock, identToken);
         if (ident == nullptr) {
-          ReportError(p, p->token.location, "Could not find identifier %.*s when parsing variable or constant expression",
-            p->token.length, p->token.text);
+          ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "Could not find identifier " << 
+            p->token.text << "when parsing variable or constant expression");
         }
 
         assert(ident->declaration != nullptr);
@@ -345,8 +342,7 @@ Expression *ParsePrimaryExpression(Parser *p) {
 
         VariableDeclaration *varDecl = (VariableDeclaration *)ident->declaration;
         if (varDecl->statementType != StatementType_VariableDeclaration) {
-          ReportError(p, "Identifier %.*s does not represent a variable",
-            (int)ident->name.length, ident->name.string);
+          ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "Identifier " << ident->name.string << " does not represent a variable");
           return nullptr;
         }
 
@@ -370,7 +366,7 @@ Expression *ParsePrimaryExpression(Parser *p) {
       e->typeInfo.type = p->compiler->typeDeclU64;
       NextToken(p); // Eat TokenType_KeywordSizeOf
       if (p->token.type != TokenType_ParenOpen) {
-        ReportError(p, p->token.location, "Expected copenlose paren for sizeof expr");
+        ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected copenlose paren for sizeof expr");
         return nullptr;
       }
 
@@ -380,7 +376,7 @@ Expression *ParsePrimaryExpression(Parser *p) {
       }
 
       if (p->token.type != TokenType_ParenClose) {
-        ReportError(p, p->token.location, "Expected close paren for sizeof expr");
+        ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected close paren for sizeof expr");
         return nullptr;
       }
 
@@ -425,7 +421,7 @@ Expression *ParsePrimaryExpression(Parser *p) {
       NextToken(p); //Eat TokenType_ParenOpen
       Expression *result = ParseExpression(p);
       if (p->token.type != TokenType_ParenClose) {
-        ReportError(p, p->token.location, "Paren expression not terminated with closing paren");
+        ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Paren expression not terminated with closing paren");
         return nullptr;
       }
 
@@ -434,7 +430,7 @@ Expression *ParsePrimaryExpression(Parser *p) {
     } break;
 
     default: {
-      ReportError(p, p->token.location, "Unexpected token");
+      ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Unexpected token");
       return nullptr;
     } break;
   }
@@ -498,7 +494,7 @@ TypeDeclaration *ParseTypeDeclaration(Parser *p, Identifier *ident) {
     Statement *statement = ParseStatement(p);
     if (statement == nullptr) return nullptr;
     if (statement->statementType != StatementType_VariableDeclaration) {
-      ReportError(p, "Type members must be variable declarations");
+      ReportErrorC(p->compiler, FrontendErrorType_Unspecified, statement->location, "Type members must be variable declarations");
       return nullptr;
     }
 
@@ -523,20 +519,20 @@ static size_t ParseSubscriptOperator(Parser *p) {
   assert(p->token.type == TokenType_ArrayOpen);
   NextToken(p); //Eat TokenType_ArrayOpen
   if (p->token.type == TokenType_ArrayClose) {
-    ReportError(p, "Must specifiy array size");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Must specifiy array size");
     return 0; //todo should be expr
-  } 
+  }
   
   size_t result = 0;
   if (p->token.type == TokenType_Integer) {
     result = p->token.unsignedValue;
     NextToken(p);
   } else {
-    ReportError(p, "Array size must be numeric constant");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Array size must be numeric constant");
   }
 
   if (p->token.type != TokenType_ArrayClose) {
-    ReportError(p, "Must close array");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Must close array");
   } else {
     NextToken(p);
   }
@@ -557,22 +553,20 @@ bool ParseTypeInfo(Parser *p, TypeInfo *typeInfo) {
   }
 
   if (p->token.type != TokenType_Identifier) {
-    ReportError(p, p->token.location, "Unreconized type '%.*s'",
-      (int)p->token.length, p->token.text);
+    ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "Unreconized type " << p->token.text);
     NextToken(p);
     return false;
   }
 
   Identifier *typeIdent = FindIdentifier(p->currentBlock, p->token);
   if (typeIdent == nullptr) {
-    ReportError(p, p->token.location, "Could not find type %.*s", (int)p->token.length, p->token.text);
+    ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "Could not find type " << p->token.text);
     return false;
   }
 
   //TODO show location of the declaration
   if (typeIdent->declaration->statementType != StatementType_TypeDeclaration) {
-    ReportError(p, p->token.location, "%.*s does not name a type", 
-      (int)typeIdent->name.length, typeIdent->name.string);
+    ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, typeIdent->name.string << " does not name a type");
     return false;
   }
 
@@ -588,7 +582,7 @@ bool ParseParameterDeclaration(Parser *p, ParameterDeclaration *params) {
   while (p->token.type != TokenType_ParenClose && p->token.type != TokenType_EndOfBuffer) {
     Statement *s = ParseStatement(p);
     if (s->statementType != StatementType_VariableDeclaration) {
-      ReportError(p, "statement in parameter declaration is not a variable declaration");
+      ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "statement in parameter declaration is not a variable declaration");
       return false;
     }
 
@@ -602,7 +596,7 @@ bool ParseParameterDeclaration(Parser *p, ParameterDeclaration *params) {
 
     params->parameterCount++;
     if (p->token.type != TokenType_SymbolComma && p->token.type != TokenType_ParenClose && p->token.type != TokenType_EndOfBuffer) {
-      ReportError(p, p->token.location, "Expected comma in parameter declaration");
+      ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected comma in parameter declaration");
       return false;
     }
 
@@ -612,7 +606,7 @@ bool ParseParameterDeclaration(Parser *p, ParameterDeclaration *params) {
   }
 
   if (p->token.type == TokenType_EndOfBuffer) {
-    ReportError(p, "Reached end of buffer before end of parameter declaration");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Reached end of buffer before end of parameter declaration");
     return false;
   } 
 
@@ -645,13 +639,12 @@ Statement *ParseProcedureDeclaration(Parser *p, Identifier *ident) {
     procDecl->isForeign = true;
     NextToken(p);
     if (p->token.type == TokenType_BraceOpen) {
-      ReportError(p, "Foregin functions cannot have a procedure body!");
+      ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Foregin functions cannot have a procedure body!");
     }
   }
 
   if (p->token.type != TokenType_BraceOpen && procDecl->isForeign == false) {
-    ReportError(p, p->token.location, "Procedure '%.*s' must have a body",
-      (int)ident->name.length, ident->name.string);
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Procedure " << ident->name.string << " must have a body");
   } else if (procDecl->isForeign == false) {
     NextToken(p); //Eat TokenType_BraceOpen
     if (ParseCurrentBlock(p) == nullptr) return nullptr;    
@@ -684,21 +677,19 @@ VariableAssignment *ParseVariableAssignment(Parser *p, Token identToken) {
   VariableAssignment *varAssignment = CreateStatement(VariableAssignment, identToken.location, p);
   Identifier *ident = FindIdentifier(p->currentBlock, identToken);
   if (ident == nullptr) {
-    ReportError(p, identToken.location, "Variable '%.*s' not found in scope",
-      (int)identToken.length, identToken.text);
+    ReportErrorC(p->compiler, FrontendErrorType_Unspecified, identToken.location, "Variable " << identToken.text << " not found in scope");
       return nullptr;
   } else {
     assert(ident->declaration != nullptr);
     varAssignment->variableAccess.variable = (VariableDeclaration *)ident->declaration;
     if (varAssignment->variableAccess.variable->statementType != StatementType_VariableDeclaration) {
-      ReportError(p, identToken.location, "%.*s does not name a variable",
-        (int)identToken.length, identToken.text);
+      ReportErrorC(p->compiler, FrontendErrorType_Unspecified, identToken.location, identToken.text << " does not name a variable");
     }
 
     ParseVariableAccess(p, &varAssignment->variableAccess, &varAssignment->typeInfo);
 
     if (p->token.type != TokenType_SymbolEquals) {
-      ReportError(p, p->token.location, "Expected '='");
+      ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected '='");
       return nullptr;
     }
 
@@ -726,11 +717,11 @@ CallStatement *ParseCallStatement(Parser *p, Token identToken) {
   CallStatement *callStatement = CreateStatement(CallStatement, identToken.location, p);
   Identifier *ident = FindIdentifier(p->currentBlock, identToken);
   if (ident == nullptr) {
-    ReportError(p, identToken.location, "Identifier '%.*s' not found when trying to call procedure", (int)identToken.length, identToken.text);
+    ReportErrorC(p->compiler, FrontendErrorType_Unspecified, identToken.location, "Identifier " << identToken.text << "not found when trying to call procedure");
   } else {
     ProcedureDeclaration *procDecl = (ProcedureDeclaration *)ident->declaration;
     if (procDecl->statementType != StatementType_ProcedureDeclaration) {
-      ReportError(p, identToken.location, "Identifier does not name a procedure");
+      ReportErrorC(p->compiler, FrontendErrorType_Unspecified, identToken.location, "Identifier does not name a procedure");
     } else {
       callStatement->procedure = procDecl;
       callStatement->params.parameterList = &procDecl->inputParameters;
@@ -756,7 +747,7 @@ Statement *ParseIdentiferStatement(Parser *p) {
       Identifier *ident = FindIdentifier(p->currentBlock, identToken);
       if (ident != nullptr) {
         //TODO WAY BETTER ERROR FOR THIS
-        ReportError(p, "Cannot declare new identifier %.*s", identToken.length, identToken.text);
+        ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "Cannot declare new identifier " << identToken.text);
         return nullptr;
       }
 
@@ -771,7 +762,7 @@ Statement *ParseIdentiferStatement(Parser *p) {
       NextToken(p); //Eat double colon
       Identifier *ident = FindIdentifier(p->currentBlock, identToken);
       if (ident != nullptr) {
-        ReportError(p, "Cannot declare new identifier %.*s", identToken.length, identToken.text);
+        ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "Cannot declare new identifier " << identToken.text);
         return nullptr;
       }
 
@@ -791,7 +782,7 @@ Statement *ParseIdentiferStatement(Parser *p) {
     } break;
 
     case TokenType_Identifier: {
-      ReportError(p, p->token.location, "Unexptected identifier(C style declaration?)");
+      ReportErrorC(p->compiler, FrontendErrorType_Unspecified, p->token.location, "Unexptected identifier(C style declaration?)");
       return nullptr;
     } break;
 
@@ -803,7 +794,7 @@ Statement *ParseIdentiferStatement(Parser *p) {
 
     default: {
       
-      ReportError(p, p->token.location, "Unexptected token after identifier");
+      ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Unexptected token after identifier");
       return nullptr;
     };
   }
@@ -836,7 +827,7 @@ WhileStatement *ParseWhileStatement(Parser *p) {
   //The while condition has been sucuessfuly parsed and now we will handle the block
   NextToken(p); //Eat TokenType_ParenClose
   if (p->token.type != TokenType_BraceOpen) {
-    ReportError(p, p->token.location, "Expected block after while");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected block after while");
     return nullptr;
   }
   NextToken(p); //Eat TokenType_BraceOpen
@@ -868,7 +859,7 @@ IfStatement *ParseIfStatement(Parser *p) {
   //The condition has been sucuessfuly parsed and now the block will be parsed
   NextToken(p); //Eat TokenType_ParenClose
   if (p->token.type != TokenType_BraceOpen) {
-    ReportError(p, p->token.location, "Expected block after if statement");
+    ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected block after if statement");
     return nullptr;
   }
 
@@ -896,7 +887,7 @@ IfStatement *ParseIfStatement(Parser *p) {
     }
 
     if (p->token.type != TokenType_BraceOpen) {
-      ReportError(p, p->token.location, "Expected block after if");
+      ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected block after if");
       return nullptr;
     }
 
@@ -919,7 +910,7 @@ Statement *ParseStatement(Parser *p) {
     case TokenType_KeywordImport: {
       NextToken(p); //Eat TokenType_KeywordImport
       if (p->token.type != TokenType_String) {
-        ReportError(p, p->token.location, "Expected string literal after IMPORT keyword");
+        ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Expected string literal after IMPORT keyword");
         return nullptr;
       }
 
@@ -954,8 +945,7 @@ Statement *ParseStatement(Parser *p) {
     } break;
 
     default: {
-      ReportError(p, p->token.location, "Unexpected token '%.*s' Epxected a statement",
-        p->token.length, p->token.text);
+      ReportErrorC(p->compiler, FrontendErrorType_Syntax, p->token.location, "Unexpected token " << p->token.text << " Epxected a statement");
       NextToken(p);
       return nullptr;
     } break;
@@ -994,4 +984,3 @@ bool ParseEntireFile(Compiler *compiler, uint32_t fileID) {
   if (compiler->errors.size() > 0) return false;
   return true;
 }
-

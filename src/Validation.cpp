@@ -206,7 +206,7 @@ int CheckNumericLiteralAggregate(Compiler *c, Expression *e) {
 bool ValidateConstantDeclaration(Compiler *compiler, ConstantDeclaration *c) {
   ValidateExpression(compiler, c->expression);
   if (!IsLiteralExpression(c->expression)) {
-    ReportError(compiler, "constant must be literal");
+    ReportErrorC(compiler, FrontendErrorType_NonConstantExpression, c->expression->location, "constant must be literal");
     return false;
   }
 
@@ -251,7 +251,7 @@ bool ValidateBinaryOperation(Compiler *compiler, BinaryOperation *binOp) {
 
   if (IsBitwiseBinOp(binOp->binopToken)) {
     if (!IsIntegerType(binOp->lhs->typeInfo.type, compiler) || !IsIntegerType(binOp->rhs->typeInfo.type, compiler)) {
-      ReportError(compiler, binOp->location, "cannot perdorm bitwise op on non int types");
+      ReportErrorC(compiler, FrontendErrorType_InvalidStatement, binOp->location, "cannot perdorm bitwise op on non int types");
       return false;
     }
   }
@@ -317,7 +317,7 @@ bool AttemptTypeCoercionIfRequired(Compiler *compiler, TypeInfo *requestedType, 
     }
 
     if (literalFitsInRequestedType == false) {
-      ReportError(compiler, "Literal does not fit");
+      ReportErrorC(compiler, FrontendErrorType_InvalidStatement, intLiteral->location, "Literal does not fit");
       return false;
     }
 

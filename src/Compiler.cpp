@@ -61,7 +61,8 @@ struct SourceLocation {
 void InitalizeCompiler(Compiler *compiler) {
   InitalizeAllocator(&compiler->stringAllocator, 32768);
   InitalizeAllocator(&compiler->astAllocator, 32768);
-  compiler->printer.stream = &std::cout;
+  allocator_stack_initalize(&compiler->stack_allocator, 1024*1024);
+  compiler->printer.stack_allocator = &compiler->stack_allocator;
   compiler->printer.typeColor = TerminalColor::LightGreen;
   compiler->printer.variableColor = TerminalColor::Blue;
   compiler->printer.expressionColor = TerminalColor::Blue;
@@ -96,7 +97,6 @@ void InitalizeCompiler(Compiler *compiler) {
   internalDummyLocation.fileID = INVALID_FILE_ID;
   compiler->globalBlock = CreateStatement(Block, internalDummyLocation, &parser);
   parser.currentBlock = compiler->globalBlock;
-  compiler->typeDeclU8 = CreateBuiltinType(&parser,  internalDummyLocation,  "Any");
   compiler->typeDeclU8 = CreateBuiltinType(&parser,  internalDummyLocation,  "U8");
   compiler->typeDeclU16 = CreateBuiltinType(&parser, internalDummyLocation, "U16");
   compiler->typeDeclU32 = CreateBuiltinType(&parser, internalDummyLocation, "U32");
@@ -110,10 +110,9 @@ void InitalizeCompiler(Compiler *compiler) {
 }
 
 
-
 uint32_t AddFileToSourceFileList(Compiler *compiler, uint16_t relativeFileID, const char *filepath, size_t length) {
   if (compiler->sourceFiles.size() == INVALID_FILE_ID) {
-    ReportError(compiler, "Reached max include count");
+    ReportInternalError(compiler, "Reached max include count");
     return INVALID_FILE_ID;
   }
 
@@ -130,7 +129,8 @@ uint32_t AddFileToSourceFileList(Compiler *compiler, uint16_t relativeFileID, co
     char realPathBuffer[PATH_MAX] = {};
     char *result = realpath(concat, realPathBuffer);
     if (result != realPathBuffer) {
-      ReportError(compiler, "Error resolving absolute path");
+      //TODO resolve this else where
+      ReportInternalError(compiler, "Error resolving absolute path");
       return INVALID_FILE_ID;
     }
 
@@ -154,7 +154,7 @@ uint32_t AddFileToSourceFileList(Compiler *compiler, uint16_t relativeFileID, co
       char realPathBuffer[PATH_MAX] = {};
       char *result = realpath(concat, realPathBuffer);
       if (result != realPathBuffer) {
-        ReportError(compiler, "Error resolving absolute path");
+        ReportInternalError(compiler, "Error resolving absolute path");
         return INVALID_FILE_ID;
       }
 
@@ -176,10 +176,10 @@ uint32_t AddFileToSourceFileList(Compiler *compiler, uint16_t relativeFileID, co
 
 bool HandleCommandLineArguments(Compiler *compiler, int argc, const char **argv) {
   if (argc < 2) {
-    ReportError(compiler, "Did not provide command line argument specificiying filename!");
+    printf("Did not provide command line argument specificiying filename!");
     return false;
   } else if (argc > 2) {
-    ReportError(compiler, "Too many command line arguments!  Expected one filename!");
+    printf("Too many command line arguments!  Expected one filename!");
     return false;
   }
 
@@ -195,7 +195,13 @@ bool BuildProject(Compiler *compiler) {
   }
 
 
-  if (compiler->errors.size() > 0) return false;
+  if (compiler->errors.size() > 0) {
+    for (size_t i = 0; i < compiler->errors.size(); i++) {
+      FrontendErrorMessage *error = &compiler->errors[i];
+      printf("%s", error->message.c_str());
+    }
+    return false;
+  }
   CodegenGlobalBlock(compiler, compiler->globalBlock);
 
   if (compiler->settings.emitReadableCCode) {
@@ -232,6 +238,8 @@ bool BuildProject(Compiler *compiler) {
 int main(int argc, const char **argv) {
   Compiler compiler = {};
   InitalizeCompiler(&compiler);
+
+
   if (HandleCommandLineArguments(&compiler, argc, argv) == false) {
     return -1;
   }

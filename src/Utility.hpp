@@ -18,6 +18,53 @@ struct PersistantBlockAllocator {
   size_t blockSize;
 };
 
+struct Allocator_Stack {
+  size_t memory_size;
+  size_t memory_used;
+  uint8_t *memory;
+};
+
+void allocator_stack_initalize(Allocator_Stack *allocator, size_t size) {
+  allocator->memory_size = size;
+  allocator->memory_used = 0;
+  allocator->memory = (uint8_t *)malloc(size);
+  if (allocator->memory == nullptr) {
+    printf("fatal error: out of memory");
+    abort();
+  }
+}
+
+uint8_t *allocator_stack_push_size(Allocator_Stack *allocator, void *data, size_t size) {
+  if (allocator->memory_used + size > allocator->memory_size) {
+    assert(false);
+  }
+
+  uint8_t *result = allocator->memory + allocator->memory_used;
+  memcpy(result, data, size);
+  allocator->memory_used += size;
+  return result;
+}
+
+uint8_t *allocator_stack_push_string_fmt(Allocator_Stack *allocator, const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  uint8_t *result = allocator->memory + allocator->memory_used;
+  size_t size_remaining = allocator->memory_size - allocator->memory_used;
+  int bytes_written = vsnprintf((char *)result, size_remaining, fmt, args);
+  if (bytes_written < 0) assert(false); //Encoding error
+  if (bytes_written > size_remaining) {
+    assert(false);
+  }
+
+  //The null terminator is not included
+  allocator->memory_used += bytes_written;
+  return result;
+}
+
+uint8_t *allocator_stack_push_string_literal(Allocator_Stack *allocator, const char *string_literal);
+#define allocator_stack_push_size(allocator, data, size) allocator_stack_push_size(allocator, (void *)(data), size)
+#define allocator_stack_push_string_literal(allocator, string_literal) allocator_stack_push_size(allocator, string_literal, sizeof(string_literal) - 1)
+
 struct StringReference {
   size_t length;
   char *string;

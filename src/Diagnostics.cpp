@@ -1,6 +1,5 @@
 
 void ErrorReportBegin(Compiler *c, FrontendErrorType type, SourceLocation& location) {
-  std::stringstream stream;
   SourceFile *file = &c->sourceFiles[location.fileID];
   stream << "\033[31;1m" << "[" << file->absolutePath.string << ":" <<
     location.lineNumber << ":" << location.columnNumber << "] " << "\033[0m";
@@ -11,40 +10,8 @@ void ErrorReportBegin(Compiler *c, FrontendErrorType type, SourceLocation& locat
   c->errors.push_back(error);
 }
 
-
-void ReportError(Compiler *c, const char *fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-  vprintf(fmt, args);
-  printf("\n");
-}
-
-void ReportError(Parser *p, const char *fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-  vprintf(fmt, args);
-  printf("\n");
-}
-
-void ReportError(Compiler *compiler, const SourceLocation& location, const char *fmt, ...) {
-  SourceFile *file = &compiler->sourceFiles[location.fileID];
-  printf("\033[31;1m");
-  printf("[%.*s:%d:%d] ", (int)file->absolutePath.length, file->absolutePath.string, (int)location.lineNumber, (int)location.columnNumber);
-  va_list args;
-  va_start(args, fmt);
-  vprintf(fmt, args);
-  printf("\033[0m\n");
-}
-
-void ReportError(Parser *p, const SourceLocation& location, const char *fmt, ...) {
-  Compiler *compiler = p->compiler;
-  SourceFile *file = &compiler->sourceFiles[location.fileID];
-  printf("\033[31;1m");
-  printf("[%.*s:%d:%d] ", (int)file->absolutePath.length, file->absolutePath.string, (int)location.lineNumber, (int)location.columnNumber);
-  va_list args;
-  va_start(args, fmt);
-  vprintf(fmt, args);
-  printf("\033[0m\n");
+void ReportInternalError(Compiler *c, const char *fmt) {
+  printf("%s", fmt);
 }
 
 void LogInfo(Parser *p, const char *fmt, ...) {
@@ -292,16 +259,17 @@ void PrintBinaryOperation(BinaryOperation *binOp) {
 //=================================================
 
 void CodePrinter::setColor(TerminalColor color) {
-  *stream << TerminalColorStrings[(int)color];
+  allocator_stack_push_string_literal(stack_allocator, TerminalColorStrings[(int)color]);
 }
 
 CodePrinter& CodePrinter::operator<<(const char *string) {
-  *stream << string;
+  //TODO cleaner version of this
+  allocator_stack_push_size(stack_allocator,string, strlen(string));
   return *this;
 }
 
 CodePrinter& CodePrinter::operator<<(Identifier *ident) {
-  *stream << ident->name.string;
+  allocator_stack_push_size(stack_allocator, ident->name.string, ident->name.length);
   return *this;
 }
 
@@ -331,12 +299,12 @@ CodePrinter& CodePrinter::operator<<(Expression *expression) {
 CodePrinter& CodePrinter::operator<<(VariableDeclaration *varDecl) {
   Identifier *varIdent = varDecl->identifier;
   setColor(variableColor);
-  *stream << varIdent->name.string;
+  *this << varIdent;
   setColor(defaultColor);
-  *stream << ": ";
+  allocator_stack_push_string_literal(stack_allocator, ": ");
   *this << &varDecl->typeInfo;
   if (varDecl->initalExpression != nullptr) {
-    *stream << " = ";
+    allocator_stack_push_string_literal(stack_allocator, " = ");
     *this << varDecl->initalExpression;
   }
   return *this;
@@ -344,9 +312,9 @@ CodePrinter& CodePrinter::operator<<(VariableDeclaration *varDecl) {
 
 
 CodePrinter& CodePrinter::operator<<(VariableAssignment *varAssignment) {
-  *stream << &varAssignment->variableAccess;
-  *stream << " = ";
-  *stream << varAssignment->expression;
+  *this << &varAssignment->variableAccess;
+  allocator_stack_push_string_literal(stack_allocator, " = ");
+  *this << varAssignment->expression;
   return *this;
 }
 
@@ -357,11 +325,11 @@ CodePrinter& CodePrinter::operator<<(VariableExpression *expression) {
 
 CodePrinter& CodePrinter::operator<<(CastExpression *cast) {
   setColor(keywordColor);
-  *stream << "CAST";
+  allocator_stack_push_string_literal(stack_allocator, "CAST");
   setColor(defaultColor);
-  *stream << "(";
+  allocator_stack_push_string_literal(stack_allocator, "(");
   *this << &cast->typeInfo;
-  *stream << ")";
+  allocator_stack_push_string_literal(stack_allocator, ")");
   *this << cast->expression;
   return *this;
 }
@@ -369,32 +337,34 @@ CodePrinter& CodePrinter::operator<<(CastExpression *cast) {
 CodePrinter& CodePrinter::operator<<(CallExpression *callExpr) {
   if (callExpr->procedure == nullptr) return *this;
   Identifier *procIdent = callExpr->procedure->identifier;
-  *stream << procIdent->name.string;
+  *this << procIdent;
   *this << &callExpr->params;
   return *this;
 }
 
 CodePrinter& CodePrinter::operator<<(SizeOfExpression *expression) {
   setColor(keywordColor);
-  *stream << "SIZEOF";
+  allocator_stack_push_string_literal(stack_allocator, "SIZEOF");
   setColor(defaultColor);
-  *stream << "(";
+  allocator_stack_push_string_literal(stack_allocator, "(");
   *this << &expression->sizeOfTypeInfo;
-  *stream << ")";
+  allocator_stack_push_string_literal(stack_allocator, ")");
   return *this;
 }
 
 
 CodePrinter& CodePrinter::operator<<(UnaryOperation *unaryOp) {
   for (size_t i = 0; i < unaryOp->unaryCount; i++)
-    *stream << TokenString[unaryOp->unaryToken];
+    allocator_stack_push_string_literal(stack_allocator, TokenString[unaryOp->unaryToken]);
   *this << unaryOp->expression;
   return *this;
 }
 
 CodePrinter& CodePrinter::operator<<(BinaryOperation *binOp) {
   *this << binOp->lhs;
-  *stream << " " << TokenString[binOp->binopToken] << " ";
+  allocator_stack_push_string_literal(stack_allocator, " ");
+  allocator_stack_push_string_literal(stack_allocator, TokenString[binOp->binopToken]);
+  allocator_stack_push_string_literal(stack_allocator, " ");
   *this << binOp->rhs;
   return *this;
 }
@@ -402,36 +372,45 @@ CodePrinter& CodePrinter::operator<<(BinaryOperation *binOp) {
 //================================================================
 
 CodePrinter& CodePrinter::operator<<(ParameterInvokation *params) {
-  *stream << "(";
+  allocator_stack_push_string_literal(stack_allocator, "(");
   Expression *current = params->firstParameterExpression;
   while (current != nullptr) {
     *this << current;
     current = current->next;
-    if (current != nullptr) *stream << ", ";
+    if (current != nullptr) allocator_stack_push_string_literal(stack_allocator, ", ");
   }
-  *stream << ")";
+  allocator_stack_push_string_literal(stack_allocator, ")");
   return *this;
 }
 
 CodePrinter& CodePrinter::operator<<(ParameterDeclaration *params) {
-  *stream << "(";
+  allocator_stack_push_string_literal(stack_allocator, "(");
   VariableDeclaration *current = params->firstParameter;
   while (current != nullptr) {
     *this << current;
     current = (VariableDeclaration *)current->next;
-    if (current != nullptr) *stream << ", ";
+    if (current != nullptr) allocator_stack_push_string_literal(stack_allocator, ", ");
   }
-  *stream << ")";
+
+  allocator_stack_push_string_literal(stack_allocator, ")");
   return *this;
 }
 
 CodePrinter& CodePrinter::operator<<(TypeInfo *typeInfo) {
-  *stream << TerminalColorStrings[(int)typeColor];
+  setColor(typeColor);
   Identifier *typeIdent = typeInfo->type->identifier;
-  for (size_t i = 0; i < typeInfo->indirectionLevel; i++) *stream << "@";
-  if (typeInfo->arraySize > 0) *stream << "[" << typeInfo->arraySize << "]";
-  *stream << typeIdent->name.string;
-  *stream << TerminalColorStrings[(int)defaultColor];
+  for (size_t i = 0; i < typeInfo->indirectionLevel; i++) { 
+    allocator_stack_push_string_literal(stack_allocator, "@");
+  }
+
+  if (typeInfo->arraySize > 0) { 
+    allocator_stack_push_string_literal(stack_allocator, "[");
+    allocator_stack_push_string_fmt(stack_allocator, "%d", typeInfo->arraySize);
+    allocator_stack_push_string_literal(stack_allocator, "]");
+  }
+
+  *this << typeIdent->name.string;
+  setColor(defaultColor);
   return *this;
 }
 
@@ -439,7 +418,7 @@ CodePrinter& CodePrinter::operator<<(VariableAccess *va) {
   VariableDeclaration *var = va->variable;
   for (int i = 0; i < va->accessCount; i++) {
     setColor(variableColor);
-    *stream << var->identifier->name.string;
+    *this << var->identifier;
     setColor(defaultColor);
     if (va->subscriptExpressions[i] != nullptr) {
       *this << va->subscriptExpressions[i];
@@ -447,7 +426,7 @@ CodePrinter& CodePrinter::operator<<(VariableAccess *va) {
 
     if (i + 1 < va->accessCount) {
       var = GetVariableAtIndex(&var->typeInfo, va->indices[i + 1]);
-      *stream << ".";
+      allocator_stack_push_string_literal(stack_allocator, ".");
     }
   }
 

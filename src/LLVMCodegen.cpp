@@ -218,7 +218,7 @@ void CodegenGlobalBlock(Compiler *compiler, Block *block) {
       compiler->settings.outputDirectory.c_str(), compiler->settings.projectName.c_str());
     system(s.getString());
   } else {
-    ReportError(compiler, "\n\nFAILED TO VERIFY LLVM MODULE");
+    ReportInternalError(compiler, "\n\nFAILED TO VERIFY LLVM MODULE");
   }
 
   {
